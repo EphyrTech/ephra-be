@@ -1,0 +1,94 @@
+{
+    "name": "Ephra-BE",
+    "dockerComposeFile": "../docker-compose.yml",
+    "service": "api",
+    "workspaceFolder": "/app",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "python.linting.enabled": true,
+                "python.linting.pylintEnabled": true,
+                "python.formatting.provider": "black",
+                "python.formatting.blackPath": "/usr/local/bin/black",
+                "editor.formatOnSave": true,
+                "editor.rulers": [88],
+                "editor.codeActionsOnSave": {
+                    "source.organizeImports": "explicit"
+                },
+                "python.analysis.typeCheckingMode": "basic",
+                "python.analysis.autoImportCompletions": true,
+                "python.testing.pytestEnabled": true,
+                "python.testing.unittestEnabled": false,
+                "python.testing.nosetestsEnabled": false,
+                "python.testing.pytestArgs": [
+                    "tests"
+                ],
+                "python.debugpy.debugJustMyCode": true
+            },
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-azuretools.vscode-docker",
+                "njpwerner.autodocstring",
+                "matangover.mypy",
+                "ms-python.black-formatter",
+                "ms-python.isort",
+                "tamasfe.even-better-toml",
+                "yzhang.markdown-all-in-one",
+                "timonwong.shellcheck",
+                "redhat.vscode-yaml",
+                "eamodio.gitlens",
+                "github.copilot",
+                "github.vscode-pull-request-github",
+                "ms-vsliveshare.vsliveshare",
+                "gruntfuggly.todo-tree",
+                "streetsidesoftware.code-spell-checker"
+            ],
+            "launch": {
+                "version": "0.2.0",
+                "configurations": [
+                    {
+                        "name": "FastAPI",
+                        "type": "python",
+                        "request": "launch",
+                        "module": "uvicorn",
+                        "args": [
+                            "main:app",
+                            "--host",
+                            "0.0.0.0",
+                            "--port",
+                            "8000",
+                            "--reload"
+                        ],
+                        "jinja": true,
+                        "justMyCode": false,
+                        "console": "integratedTerminal"
+                    },
+                    {
+                        "name": "Python: Current File",
+                        "type": "python",
+                        "request": "launch",
+                        "program": "${file}",
+                        "console": "integratedTerminal",
+                        "justMyCode": false
+                    },
+                    {
+                        "name": "Python: Debug Tests",
+                        "type": "python",
+                        "request": "launch",
+                        "program": "${file}",
+                        "purpose": ["debug-test"],
+                        "console": "integratedTerminal",
+                        "justMyCode": false
+                    }
+                ]
+            }
+        }
+    },
+    "forwardPorts": [8000, 8001, 8002, 8003, 8004, 8005, 5432, 5050],
+    "postCreateCommand": "uv pip install -r requirements.txt && uv pip install black isort pylint mypy pytest pytest-cov debugpy",
+    "postStartCommand": "./scripts/start_app.sh",
+    "remoteUser": "root",
+    "shutdownAction": "stopCompose"
+}

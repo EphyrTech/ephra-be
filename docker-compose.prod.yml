@@ -1,0 +1,85 @@
+version: "3"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    restart: always
+    expose:
+      - "8000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+      - ./static:/app/static
+    environment:
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD:-postgres}@db:5432/mental_health_db
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-for-production}
+      - ENVIRONMENT=production
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - LOG_LEVEL=INFO
+    depends_on:
+      - db
+    networks:
+      - app-network
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_DB=mental_health_db
+    restart: always
+    networks:
+      - app-network
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./static:/srv/static
+      - ./logs/caddy:/app/logs/caddy
+    depends_on:
+      - api
+    networks:
+      - app-network
+    restart: always
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+
+networks:
+  app-network:
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

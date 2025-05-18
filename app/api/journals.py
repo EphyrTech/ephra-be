@@ -10,6 +10,7 @@ from app.api.deps import get_current_user
 
 router = APIRouter()
 
+
 @router.get("/", response_model=List[JournalSchema])
 def get_journals(
     skip: int = 0,
@@ -29,6 +30,7 @@ def get_journals(
     )
     return journals
 
+
 @router.post("/", response_model=JournalSchema, status_code=status.HTTP_201_CREATED)
 def create_journal(
     journal_in: JournalCreate,
@@ -47,6 +49,7 @@ def create_journal(
     db.refresh(journal)
     return journal
 
+
 @router.get("/{journal_id}", response_model=JournalSchema)
 def get_journal(
     journal_id: str,
@@ -56,15 +59,18 @@ def get_journal(
     """
     Get a specific journal by id.
     """
-    journal = db.query(Journal).filter(
-        Journal.id == journal_id, Journal.user_id == current_user.id
-    ).first()
+    journal = (
+        db.query(Journal)
+        .filter(Journal.id == journal_id, Journal.user_id == current_user.id)
+        .first()
+    )
     if not journal:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Journal not found",
         )
     return journal
+
 
 @router.put("/{journal_id}", response_model=JournalSchema)
 def update_journal(
@@ -76,42 +82,46 @@ def update_journal(
     """
     Update a journal.
     """
-    journal = db.query(Journal).filter(
-        Journal.id == journal_id, Journal.user_id == current_user.id
-    ).first()
+    journal = (
+        db.query(Journal)
+        .filter(Journal.id == journal_id, Journal.user_id == current_user.id)
+        .first()
+    )
     if not journal:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Journal not found",
         )
-    
+
     update_data = journal_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(journal, field, value)
-    
+
     db.add(journal)
     db.commit()
     db.refresh(journal)
     return journal
+
 
 @router.delete("/{journal_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_journal(
     journal_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> Any:
+) -> None:
     """
     Delete a journal.
     """
-    journal = db.query(Journal).filter(
-        Journal.id == journal_id, Journal.user_id == current_user.id
-    ).first()
+    journal = (
+        db.query(Journal)
+        .filter(Journal.id == journal_id, Journal.user_id == current_user.id)
+        .first()
+    )
     if not journal:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Journal not found",
         )
-    
+
     db.delete(journal)
     db.commit()
-    return None

@@ -1,0 +1,32 @@
+[project]
+name = "ephra-fastapi"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.15.2",
+    "bcrypt>=4.3.0",
+    "email-validator>=2.2.0",
+    "fastapi>=0.115.12",
+    "gunicorn>=23.0.0",
+    "httptools>=0.6.4",
+    "passlib>=1.7.4",
+    "psutil>=7.0.0",
+    "psycopg2-binary>=2.9.10",
+    "pydantic>=2.11.4",
+    "pydantic-settings>=2.9.1",
+    "python-dotenv>=1.1.0",
+    "python-jose>=3.4.0",
+    "python-multipart>=0.0.20",
+    "sqlalchemy>=2.0.41",
+    "uvicorn>=0.34.2",
+    "uvloop>=0.21.0",
+    "websockets>=15.0.1",
+]
+
+[tool.alembic]
+script_location = "alembic"
+version_locations = "alembic/versions"
+# You may optionally specify config_file if you want to keep alembic.ini
+# config_file = "alembic.ini"

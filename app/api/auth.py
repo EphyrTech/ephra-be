@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.db.database import get_db
-from app.db.models import User
+from app.db.models import User, UserRole
 from app.schemas.auth import Token, Login, GoogleAuth, PasswordReset
 from app.schemas.user import UserCreate, User as UserSchema
 
@@ -25,11 +25,19 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)) -> Any:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The user with this email already exists in the system.",
         )
-    
+
     db_user = User(
         email=user_in.email,
         name=user_in.name,
+        first_name=user_in.first_name,
+        last_name=user_in.last_name,
+        display_name=user_in.display_name,
+        photo_url=user_in.photo_url,
+        date_of_birth=user_in.date_of_birth,
+        country=user_in.country,
+        phone_number=user_in.phone_number,
         hashed_password=get_password_hash(user_in.password),
+        role=UserRole.USER,  # Default role for new users
     )
     db.add(db_user)
     db.commit()
@@ -48,11 +56,11 @@ def login(login_data: Login, db: Session = Depends(get_db)) -> Any:
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     return {
         "access_token": create_access_token(
-            subject=user.id, expires_delta=access_token_expires
+            subject=user.id, expires_delta=access_token_expires, role=user.role.value
         ),
         "token_type": "bearer",
     }
@@ -64,7 +72,7 @@ def google_auth(google_data: GoogleAuth, db: Session = Depends(get_db)) -> Any:
     """
     # In a real implementation, you would verify the Google token
     # and extract user information from it
-    
+
     # For now, we'll just return a mock token
     return {
         "access_token": "mock_google_token",
@@ -80,7 +88,7 @@ def reset_password(reset_data: PasswordReset, db: Session = Depends(get_db)) -> 
     if not user:
         # Don't reveal that the user doesn't exist
         return {"message": "Password reset email sent"}
-    
+
     # In a real implementation, you would send an email with a reset link
-    
+
     return {"message": "Password reset email sent"}

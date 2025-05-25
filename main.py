@@ -1,14 +1,24 @@
 import time
 import uvicorn
-from fastapi import FastAPI, Request, APIRouter
+from fastapi import FastAPI, Request, APIRouter, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.core.logging import setup_logging
+from app.core.error_handlers import (
+    service_exception_handler,
+    validation_exception_handler,
+    http_exception_handler,
+    database_exception_handler,
+    general_exception_handler
+)
+from app.services.exceptions import ServiceException
 from app.middleware import RateLimiter, CacheMiddleware
-from app.api import auth, users, journals, media, appointments, specialists
+from app.api import auth, users, journals, media, appointments, specialists, admin, care_providers
 from app.api import health, metrics, websockets
 
 # Setup logging
@@ -60,6 +70,10 @@ app = FastAPI(
             "description": "Specialist information, profiles, and availability"
         },
         {
+            "name": "Admin",
+            "description": "Administrative functions for user and role management"
+        },
+        {
             "name": "Media",
             "description": "Media file uploads and management"
         },
@@ -86,11 +100,24 @@ app.add_middleware(
     max_age=600,  # Cache preflight requests for 10 minutes
 )
 
+# Add a simple CORS preflight handler for debugging
+# Note: This is commented out as it was interfering with route resolution
+# @app.options("/{path:path}")
+# async def options_handler(path: str):
+#     return {"message": "OK"}
+
 # Add rate limiting middleware
 app.add_middleware(RateLimiter)
 
 # Add caching middleware
 app.add_middleware(CacheMiddleware)
+
+# Add error handlers
+app.add_exception_handler(ServiceException, service_exception_handler)
+app.add_exception_handler(ValidationError, validation_exception_handler)
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(SQLAlchemyError, database_exception_handler)
+app.add_exception_handler(Exception, general_exception_handler)
 
 # Logging middleware
 @app.middleware("http")
@@ -115,6 +142,8 @@ v1_router.include_router(journals.router, prefix="/journals", tags=["Journals"])
 v1_router.include_router(media.router, prefix="/media", tags=["Media"])
 v1_router.include_router(appointments.router, prefix="/appointments", tags=["Appointments"])
 v1_router.include_router(specialists.router, prefix="/specialists", tags=["Specialists"])
+v1_router.include_router(care_providers.router, prefix="/care-providers", tags=["Care Providers"])
+v1_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 v1_router.include_router(health.router, tags=["Health"])
 v1_router.include_router(metrics.router, tags=["Monitoring"])
 v1_router.include_router(websockets.router, tags=["WebSockets"])

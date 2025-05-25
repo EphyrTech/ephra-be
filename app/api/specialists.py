@@ -1,67 +1,113 @@
-from typing import Any, List
+from typing import Any, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.db.models import Specialist, Availability, User
-from app.schemas.specialist import (
-    Specialist as SpecialistSchema,
-    SpecialistWithAvailability,
+from app.db.models import CareProviderProfile, Availability, User, UserRole, SpecialistType
+from app.schemas.care_provider import (
+    CareProviderWithUser,
     Availability as AvailabilitySchema,
 )
 from app.api.deps import get_current_user
+from app.api.role_deps import require_care_or_admin
 
 router = APIRouter()
 
-@router.get("/", response_model=List[SpecialistSchema])
-def get_specialists(
+@router.get("/care-providers", response_model=List[CareProviderWithUser])
+def get_care_providers_endpoint(
+    specialty: Optional[str] = Query(None, description="Filter by specialty: mental or physical"),
     skip: int = 0,
     limit: int = 100,
-    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Any:
     """
-    Retrieve specialists.
+    Retrieve care providers, optionally filtered by specialty.
     """
-    specialists = db.query(Specialist).offset(skip).limit(limit).all()
-    return specialists
+    query = db.query(CareProviderProfile).join(User).filter(
+        User.role == UserRole.CARE_PROVIDER,
+        User.is_active == True,
+        CareProviderProfile.is_accepting_patients == True
+    )
 
-@router.get("/{specialist_id}", response_model=SpecialistSchema)
-def get_specialist(
-    specialist_id: str,
-    current_user: User = Depends(get_current_user),
+    if specialty:
+        try:
+            specialty_enum = SpecialistType(specialty.lower())
+            query = query.filter(CareProviderProfile.specialty == specialty_enum)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid specialty. Must be one of: {[s.value for s in SpecialistType]}"
+            )
+
+    profiles = query.offset(skip).limit(limit).all()
+
+    # Convert to response format with user info
+    result = []
+    for profile in profiles:
+        profile_dict = {
+            **profile.__dict__,
+            "user_name": profile.user.name,
+            "user_email": profile.user.email,
+            "user_first_name": profile.user.first_name,
+            "user_last_name": profile.user.last_name,
+        }
+        result.append(profile_dict)
+
+    return result
+
+@router.get("/{care_provider_id}", response_model=CareProviderWithUser)
+def get_care_provider(
+    care_provider_id: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Any:
     """
-    Get a specific specialist by id.
+    Get a specific care provider by user ID.
     """
-    specialist = db.query(Specialist).filter(Specialist.id == specialist_id).first()
-    if not specialist:
+    profile = db.query(CareProviderProfile).join(User).filter(
+        CareProviderProfile.user_id == care_provider_id,
+        User.is_active == True
+    ).first()
+
+    if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Specialist not found",
+            detail="Care provider not found",
         )
-    return specialist
 
-@router.get("/{specialist_id}/availability", response_model=List[AvailabilitySchema])
-def get_specialist_availability(
-    specialist_id: str,
-    current_user: User = Depends(get_current_user),
+    return {
+        **profile.__dict__,
+        "user_name": profile.user.name,
+        "user_email": profile.user.email,
+        "user_first_name": profile.user.first_name,
+        "user_last_name": profile.user.last_name,
+    }
+
+@router.get("/{care_provider_id}/availability", response_model=List[AvailabilitySchema])
+def get_care_provider_availability(
+    care_provider_id: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Any:
     """
-    Get a specialist's availability.
+    Get a care provider's availability.
     """
-    specialist = db.query(Specialist).filter(Specialist.id == specialist_id).first()
-    if not specialist:
+    # Get the care provider profile
+    profile = db.query(CareProviderProfile).filter(
+        CareProviderProfile.user_id == care_provider_id
+    ).first()
+
+    if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Specialist not found",
+            detail="Care provider not found",
         )
-    
+
     availabilities = db.query(Availability).filter(
-        Availability.specialist_id == specialist_id
+        Availability.care_provider_id == profile.id,
+        Availability.is_available == True
     ).all()
-    
+
     return availabilities

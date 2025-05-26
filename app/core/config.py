@@ -24,17 +24,25 @@ class Settings(BaseSettings):
     )
 
     # CORS
-    CORS_ORIGINS: List[str] = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:19006",  # Expo development server
-        "http://127.0.0.1:19006",
-        "http://localhost:8081",   # React Native Metro bundler
-        "http://127.0.0.1:8081",
-        "http://localhost:19000",  # Expo CLI
-        "http://127.0.0.1:19000",
-        "*"  # Allow all origins in development
-    ] if ENVIRONMENT == "development" else os.getenv("CORS_ORIGINS", "").split(",")
+    @property
+    def CORS_ORIGINS(self) -> List[str]:
+        if self.ENVIRONMENT == "development":
+            return [
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+                "http://localhost:19006",  # Expo development server
+                "http://127.0.0.1:19006",
+                "http://localhost:8081",   # React Native Metro bundler
+                "http://127.0.0.1:8081",
+                "http://localhost:19000",  # Expo CLI
+                "http://127.0.0.1:19000",
+                "*"  # Allow all origins in development
+            ]
+        else:
+            cors_origins = os.getenv("CORS_ORIGINS", "*")
+            if cors_origins:
+                return [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
+            return ["*"]
 
     # Google OAuth
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")

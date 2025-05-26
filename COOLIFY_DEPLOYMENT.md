@@ -95,15 +95,21 @@ The deployment uses the following persistent volumes:
    - If it persists, check if you have other services running on the same Coolify instance
    - Try stopping other services temporarily or use a different port
 
-2. **Service won't start**: Check environment variables are set correctly
+2. **CORS_ORIGINS parsing error**:
+   - Fixed in the latest version - CORS_ORIGINS now accepts comma-separated values
+   - Example: `CORS_ORIGINS=https://app.com,https://admin.app.com`
+   - For single domain: `CORS_ORIGINS=https://app.com`
+   - For all origins: `CORS_ORIGINS=*`
 
-3. **Database connection errors**: Verify DB_PASSWORD is set
+3. **Service won't start**: Check environment variables are set correctly
 
-4. **CORS errors**: Ensure CORS_ORIGINS includes your frontend domain
+4. **Database connection errors**: Verify DB_PASSWORD is set
 
-5. **SSL certificate issues**: Verify domain DNS is pointing to Coolify server
+5. **CORS errors**: Ensure CORS_ORIGINS includes your frontend domain
 
-6. **Container networking issues**:
+6. **SSL certificate issues**: Verify domain DNS is pointing to Coolify server
+
+7. **Container networking issues**:
    - Coolify manages networking automatically
    - No need to expose ports manually
    - Let Coolify handle reverse proxy routing

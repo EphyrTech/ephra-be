@@ -89,10 +89,24 @@ The deployment uses the following persistent volumes:
 
 ### Common Issues
 
-1. **Service won't start**: Check environment variables are set correctly
-2. **Database connection errors**: Verify DB_PASSWORD is set
-3. **CORS errors**: Ensure CORS_ORIGINS includes your frontend domain
-4. **SSL certificate issues**: Verify domain DNS is pointing to Coolify server
+1. **Port already allocated error**:
+   - This usually means another service is using port 8000
+   - The docker-compose.prod.yml has been configured to avoid this
+   - If it persists, check if you have other services running on the same Coolify instance
+   - Try stopping other services temporarily or use a different port
+
+2. **Service won't start**: Check environment variables are set correctly
+
+3. **Database connection errors**: Verify DB_PASSWORD is set
+
+4. **CORS errors**: Ensure CORS_ORIGINS includes your frontend domain
+
+5. **SSL certificate issues**: Verify domain DNS is pointing to Coolify server
+
+6. **Container networking issues**:
+   - Coolify manages networking automatically
+   - No need to expose ports manually
+   - Let Coolify handle reverse proxy routing
 
 ### Logs
 

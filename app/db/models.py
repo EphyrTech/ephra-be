@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, Date, ForeignKey, Integer, String, Text, Enum, Numeric
+from sqlalchemy import Boolean, Column, DateTime, Date, ForeignKey, Integer, String, Text, Enum, Numeric, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
@@ -79,6 +79,23 @@ class Journal(Base):
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     title = Column(String, nullable=False)
     content = Column(Text)
+
+    # Enhanced journaling fields
+    mood = Column(String)  # Main mood: 'rad', 'good', 'meh', 'bad', 'awful'
+    emotions = Column(JSON)  # Array of detailed emotions
+    sleep = Column(String)  # Sleep quality: 'excellent', 'good', 'okay', 'poor', 'terrible'
+    quick_note = Column(Text)  # Short note for quick thoughts
+    notes = Column(Text)  # Detailed notes
+    date = Column(DateTime(timezone=True))  # Entry date (can be different from created_at)
+    shared_with_coach = Column(Boolean, default=False)
+
+    # Media URLs (stored as JSON arrays)
+    photo_urls = Column(JSON)  # Array of photo URLs
+    voice_memo_urls = Column(JSON)  # Array of voice memo URLs
+    voice_memo_durations = Column(JSON)  # Array of durations in seconds
+    pdf_urls = Column(JSON)  # Array of PDF URLs
+    pdf_names = Column(JSON)  # Array of PDF names
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

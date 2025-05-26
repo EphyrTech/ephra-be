@@ -1,32 +1,45 @@
-version: "3"
-
 services:
   api:
     build:
       context: .
       dockerfile: Dockerfile.prod
-    restart: always
-    expose:
-      - "8000"
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
     volumes:
-      - ./uploads:/app/uploads
-      - ./logs:/app/logs
-      - ./static:/app/static
+      - uploads_data:/app/uploads
+      - logs_data:/app/logs
+      - static_data:/app/static
     environment:
-      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD:-postgres}@db:5432/mental_health_db
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-for-production}
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@db:5432/mental_health_db
+      - SECRET_KEY=${SECRET_KEY}
       - ENVIRONMENT=production
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
-      - LOG_LEVEL=INFO
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - SMTP_SERVER=${SMTP_SERVER:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - EMAIL_FROM=${EMAIL_FROM:-noreply@example.com}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-60}
+      - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-300}
+      - WS_MESSAGE_QUEUE_SIZE=${WS_MESSAGE_QUEUE_SIZE:-100}
+      - MAX_UPLOAD_SIZE=${MAX_UPLOAD_SIZE:-10485760}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - app-network
-    deploy:
-      resources:
-        limits:
-          cpus: "1"
-          memory: 1G
+    labels:
+      - "coolify.managed=true"
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/v1/health"]
       interval: 30s
@@ -40,16 +53,14 @@ services:
       - postgres_data:/var/lib/postgresql/data
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=mental_health_db
-    restart: always
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    restart: unless-stopped
     networks:
       - app-network
-    deploy:
-      resources:
-        limits:
-          cpus: "1"
-          memory: 1G
+    labels:
+      - "coolify.managed=true"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -57,29 +68,16 @@ services:
       retries: 5
       start_period: 10s
 
-  caddy:
-    image: caddy:2
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
-      - ./static:/srv/static
-      - ./logs/caddy:/app/logs/caddy
-    depends_on:
-      - api
-    networks:
-      - app-network
-    restart: always
-    environment:
-      - DOMAIN=${DOMAIN:-localhost}
-
 networks:
   app-network:
+    driver: bridge
 
 volumes:
   postgres_data:
-  caddy_data:
-  caddy_config:
+    driver: local
+  uploads_data:
+    driver: local
+  logs_data:
+    driver: local
+  static_data:
+    driver: local

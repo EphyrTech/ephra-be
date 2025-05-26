@@ -33,6 +33,8 @@ services:
         condition: service_healthy
     labels:
       - "coolify.managed=true"
+      - "traefik.enable=true"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/v1/health"]
       interval: 30s

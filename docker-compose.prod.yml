@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile.prod
     restart: unless-stopped
+    ports:
+      - "8000:8000"
     volumes:
       - uploads_data:/app/uploads
       - logs_data:/app/logs

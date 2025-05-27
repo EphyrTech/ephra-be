@@ -28,6 +28,8 @@ services:
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-300}
       - WS_MESSAGE_QUEUE_SIZE=${WS_MESSAGE_QUEUE_SIZE:-100}
       - MAX_UPLOAD_SIZE=${MAX_UPLOAD_SIZE:-10485760}
+      - SERVICE_FQDN_EPHRABE=${SERVICE_FQDN_EPHRABE}
+      
     depends_on:
       db:
         condition: service_healthy

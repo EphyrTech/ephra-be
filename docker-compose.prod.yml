@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile.prod
     restart: unless-stopped
     ports:
-      - "8005:8080"
+      - "3000:8080"
     volumes:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
@@ -28,8 +28,7 @@ services:
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-300}
       - WS_MESSAGE_QUEUE_SIZE=${WS_MESSAGE_QUEUE_SIZE:-100}
       - MAX_UPLOAD_SIZE=${MAX_UPLOAD_SIZE:-10485760}
-      - url=apiephra.ephyrtech.com
-      - SERVICE_FQDN_EPHRABE=${url}
+      - FQDN=${SERVICE_FQDN_API}
       
     depends_on:
       db:

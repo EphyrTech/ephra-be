@@ -24,22 +24,8 @@ from app.api import health, metrics, websockets
 # Setup logging
 logger = setup_logging()
 
-# Determine documentation URLs based on environment
-# Disable API documentation in production for security
-docs_url = "/docs" if settings.ENVIRONMENT != "production" else None
-redoc_url = "/redoc" if settings.ENVIRONMENT != "production" else None
-openapi_url = "/openapi.json" if settings.ENVIRONMENT != "production" else None
-
-# Log documentation status
-if settings.ENVIRONMENT == "production":
-    logger.info("🔒 API documentation disabled in production environment")
-else:
-    logger.info(f"📚 API documentation enabled for {settings.ENVIRONMENT} environment")
-    logger.info(f"   - Swagger UI: {docs_url}")
-    logger.info(f"   - ReDoc: {redoc_url}")
-    logger.info(f"   - OpenAPI JSON: {openapi_url}")
-
-# Create the FastAPI app with conditional documentation
+# Create the FastAPI app with full OpenAPI support
+# We'll control access to docs via middleware instead of disabling OpenAPI entirely
 app = FastAPI(
     title="Mental Health API",
     description="""
@@ -60,9 +46,9 @@ app = FastAPI(
     `Authorization: Bearer your_token_here`
     """,
     version="1.0.0",
-    docs_url=docs_url,
-    redoc_url=redoc_url,
-    openapi_url=openapi_url,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
     openapi_tags=[
         {
             "name": "Authentication",
@@ -101,8 +87,12 @@ app = FastAPI(
             "description": "Monitoring and metrics endpoints"
         }
     ],
-    swagger_ui_parameters={"defaultModelsExpandDepth": -1} if settings.ENVIRONMENT != "production" else None
+    swagger_ui_parameters={"defaultModelsExpandDepth": -1}
 )
+
+# Log CORS configuration for debugging
+logger.info(f"🌐 CORS Origins configured: {settings.CORS_ORIGINS}")
+logger.info(f"🌍 Environment: {settings.ENVIRONMENT}")
 
 # Configure CORS with more options
 app.add_middleware(
@@ -115,11 +105,35 @@ app.add_middleware(
     max_age=600,  # Cache preflight requests for 10 minutes
 )
 
-# Add a simple CORS preflight handler for debugging
-# Note: This is commented out as it was interfering with route resolution
-# @app.options("/{path:path}")
-# async def options_handler(path: str):
-#     return {"message": "OK"}
+# Middleware to block documentation endpoints in production
+@app.middleware("http")
+async def block_docs_in_production(request: Request, call_next):
+    if settings.ENVIRONMENT == "production":
+        # Block access to documentation endpoints in production
+        if request.url.path in ["/docs", "/redoc", "/openapi.json"]:
+            logger.warning(f"🔒 Blocked access to documentation endpoint: {request.url.path}")
+            raise HTTPException(
+                status_code=404,
+                detail="Not Found"
+            )
+
+    response = await call_next(request)
+    return response
+
+# Log documentation access status
+if settings.ENVIRONMENT == "production":
+    logger.info("🔒 API documentation access blocked in production environment")
+else:
+    logger.info(f"📚 API documentation enabled for {settings.ENVIRONMENT} environment")
+    logger.info("   - Swagger UI: /docs")
+    logger.info("   - ReDoc: /redoc")
+    logger.info("   - OpenAPI JSON: /openapi.json")
+
+# Add explicit OPTIONS handler for CORS preflight requests
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    """Handle CORS preflight requests for all paths."""
+    return {"message": "OK"}
 
 # Add rate limiting middleware
 app.add_middleware(RateLimiter)

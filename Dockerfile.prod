@@ -32,7 +32,7 @@ RUN mkdir -p uploads logs static
 COPY . .
 
 # Make scripts executable
-RUN chmod +x scripts/start_prod.sh scripts/check_migrations.py scripts/test_prod_setup.sh scripts/check_security.py
+RUN chmod +x scripts/start_prod.sh scripts/check_migrations.py scripts/test_prod_setup.sh scripts/check_security.py scripts/debug_cors.py
 
 # Use the startup script as entrypoint
 ENTRYPOINT ["./scripts/start_prod.sh"]

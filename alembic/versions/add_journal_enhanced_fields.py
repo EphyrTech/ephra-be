@@ -1,7 +1,7 @@
 """Add enhanced journal fields
 
 Revision ID: add_journal_enhanced_fields
-Revises:
+Revises: e9776e9576bd
 Create Date: 2024-01-01 00:00:00.000000
 
 """
@@ -11,16 +11,15 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = 'add_journal_enhanced_fields'
-down_revision = None  # Update this with the latest revision ID
+down_revision = 'e9776e9576bd'  # Depends on initial clean architecture migration
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    # Add new columns to journals table
+    # Add new columns to journals table (sleep column is added in a separate migration)
     op.add_column('journals', sa.Column('mood', sa.String(), nullable=True))
     op.add_column('journals', sa.Column('emotions', sa.JSON(), nullable=True))
-    op.add_column('journals', sa.Column('sleep', sa.String(), nullable=True))
     op.add_column('journals', sa.Column('quick_note', sa.Text(), nullable=True))
     op.add_column('journals', sa.Column('notes', sa.Text(), nullable=True))
     op.add_column('journals', sa.Column('date', sa.DateTime(timezone=True), nullable=True))
@@ -33,7 +32,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Remove the added columns
+    # Remove the added columns (sleep column is handled in a separate migration)
     op.drop_column('journals', 'pdf_names')
     op.drop_column('journals', 'pdf_urls')
     op.drop_column('journals', 'voice_memo_durations')
@@ -43,6 +42,5 @@ def downgrade() -> None:
     op.drop_column('journals', 'date')
     op.drop_column('journals', 'notes')
     op.drop_column('journals', 'quick_note')
-    op.drop_column('journals', 'sleep')
     op.drop_column('journals', 'emotions')
     op.drop_column('journals', 'mood')

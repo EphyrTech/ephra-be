@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 from datetime import datetime, timedelta
 
 from app.db.database import Base, get_db
-from app.db.models import User, Journal, Specialist, Appointment, MediaFile, Availability
+from app.db.models import User, Journal, Specialist, Appointment, MediaFile, Availability, UserRole, CareProviderProfile, SpecialistType
 from app.core.security import get_password_hash, create_access_token
 from app.core.config import settings
 from main import app
@@ -201,6 +201,58 @@ def admin_client(client, admin_token):
     client.headers = {
         **client.headers,
         "Authorization": f"Bearer {admin_token}"
+    }
+    return client
+
+
+@pytest.fixture(scope="function")
+def care_provider_user(db):
+    # Create a care provider user
+    hashed_password = get_password_hash("carepassword")
+    user = User(
+        email="careprovider@example.com",
+        name="Dr. Care Provider",
+        first_name="Care",
+        last_name="Provider",
+        hashed_password=hashed_password,
+        role=UserRole.CARE_PROVIDER,
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    # Create care provider profile
+    profile = CareProviderProfile(
+        user_id=user.id,
+        specialty=SpecialistType.MENTAL,
+        bio="Test care provider for appointments",
+        hourly_rate=15000,  # $150.00 in cents
+        license_number="TEST123",
+        years_experience=5,
+        education="Test University",
+        certifications="Test Certification",
+        is_accepting_patients=True
+    )
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+
+    return user
+
+
+@pytest.fixture(scope="function")
+def care_provider_token(care_provider_user):
+    # Create a token for the care provider user
+    return create_access_token(subject=care_provider_user.id)
+
+
+@pytest.fixture(scope="function")
+def care_provider_client(client, care_provider_token):
+    # Create a client with care provider authorization headers
+    client.headers = {
+        **client.headers,
+        "Authorization": f"Bearer {care_provider_token}"
     }
     return client
 

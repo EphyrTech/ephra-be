@@ -52,10 +52,12 @@ class AppointmentService:
         # Validate appointment time
         self._validate_appointment_time(appointment_data.start_time, appointment_data.end_time)
 
-        # Check care provider availability
-        self._check_care_provider_availability(care_provider_id, appointment_data.start_time, appointment_data.end_time)
+        # Check care provider availability only for regular users booking appointments
+        # Care providers can create appointments at any time for their patients (they manage their own schedule)
+        if current_user.role == UserRole.USER:
+            self._check_care_provider_availability(care_provider_id, appointment_data.start_time, appointment_data.end_time)
 
-        # Check for conflicts
+        # Check for conflicts (always check to prevent double-booking)
         self._check_appointment_conflicts(care_provider_id, appointment_data.start_time, appointment_data.end_time)
 
         # Create appointment
@@ -203,7 +205,13 @@ class AppointmentService:
             raise ValidationError("Appointment cannot be longer than 4 hours")
 
     def _check_care_provider_availability(self, care_provider_id: str, start_time: datetime, end_time: datetime) -> None:
-        """Check if care provider is available during the requested time"""
+        """
+        Check if care provider is available during the requested time.
+
+        This should only be called when regular users are booking appointments with care providers.
+        Care providers creating appointments for their patients should bypass this check
+        since they manage their own schedules.
+        """
         # Get care provider profile
         profile = self.db.query(CareProviderProfile).filter(
             CareProviderProfile.user_id == care_provider_id

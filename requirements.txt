@@ -23,6 +23,9 @@ websockets==11.0.3
 # Monitoring and metrics
 psutil==5.9.6
 
+# HTTP client for security checks
+requests==2.31.0
+
 # Logging
 # Using standard Python logging module
 

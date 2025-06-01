@@ -24,7 +24,22 @@ from app.api import health, metrics, websockets
 # Setup logging
 logger = setup_logging()
 
-# Create the FastAPI app with enhanced documentation
+# Determine documentation URLs based on environment
+# Disable API documentation in production for security
+docs_url = "/docs" if settings.ENVIRONMENT != "production" else None
+redoc_url = "/redoc" if settings.ENVIRONMENT != "production" else None
+openapi_url = "/openapi.json" if settings.ENVIRONMENT != "production" else None
+
+# Log documentation status
+if settings.ENVIRONMENT == "production":
+    logger.info("🔒 API documentation disabled in production environment")
+else:
+    logger.info(f"📚 API documentation enabled for {settings.ENVIRONMENT} environment")
+    logger.info(f"   - Swagger UI: {docs_url}")
+    logger.info(f"   - ReDoc: {redoc_url}")
+    logger.info(f"   - OpenAPI JSON: {openapi_url}")
+
+# Create the FastAPI app with conditional documentation
 app = FastAPI(
     title="Mental Health API",
     description="""
@@ -45,9 +60,9 @@ app = FastAPI(
     `Authorization: Bearer your_token_here`
     """,
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    docs_url=docs_url,
+    redoc_url=redoc_url,
+    openapi_url=openapi_url,
     openapi_tags=[
         {
             "name": "Authentication",
@@ -86,7 +101,7 @@ app = FastAPI(
             "description": "Monitoring and metrics endpoints"
         }
     ],
-    swagger_ui_parameters={"defaultModelsExpandDepth": -1}
+    swagger_ui_parameters={"defaultModelsExpandDepth": -1} if settings.ENVIRONMENT != "production" else None
 )
 
 # Configure CORS with more options

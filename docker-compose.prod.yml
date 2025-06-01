@@ -29,7 +29,7 @@ services:
       - WS_MESSAGE_QUEUE_SIZE=${WS_MESSAGE_QUEUE_SIZE:-100}
       - MAX_UPLOAD_SIZE=${MAX_UPLOAD_SIZE:-10485760}
       - FQDN=${SERVICE_FQDN_API}
-      
+
     depends_on:
       db:
         condition: service_healthy
@@ -50,7 +50,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=306570BE-9DF4-4660-B06C-E3B76827133C
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=mental_health_db
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     restart: unless-stopped

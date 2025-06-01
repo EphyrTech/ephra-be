@@ -129,16 +129,10 @@ else:
     logger.info("   - ReDoc: /redoc")
     logger.info("   - OpenAPI JSON: /openapi.json")
 
-# Add explicit OPTIONS handler for CORS preflight requests
-@app.options("/{path:path}")
-async def options_handler(path: str):
-    """Handle CORS preflight requests for all paths."""
-    return {"message": "OK"}
+# Let CORS middleware handle all OPTIONS requests automatically
 
-# Add rate limiting middleware
+# Add other middleware after CORS
 app.add_middleware(RateLimiter)
-
-# Add caching middleware
 app.add_middleware(CacheMiddleware)
 
 # Add error handlers

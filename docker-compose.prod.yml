@@ -29,6 +29,12 @@ services:
       - WS_MESSAGE_QUEUE_SIZE=${WS_MESSAGE_QUEUE_SIZE:-100}
       - MAX_UPLOAD_SIZE=${MAX_UPLOAD_SIZE:-10485760}
       - FQDN=${SERVICE_FQDN_API}
+      # Database seeding configuration
+      - SEED_DATABASE=${SEED_DATABASE:-false}
+      - SEED_ADMIN_EMAIL=${SEED_ADMIN_EMAIL:-admin@ephra.com}
+      - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD:-}
+      - SEED_CARE_PROVIDER_PASSWORD=${SEED_CARE_PROVIDER_PASSWORD:-}
+      - SEED_USER_PASSWORD=${SEED_USER_PASSWORD:-}
 
     depends_on:
       db:

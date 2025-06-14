@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.db.models import User, UserRole
+from app.db.models import User, UserRole, UserAssignment
 from app.schemas.appointment import (
     Appointment as AppointmentSchema,
     AppointmentCreate,
@@ -25,18 +25,27 @@ def get_assigned_users(
 ) -> Any:
     """
     Get users assigned to the current care provider.
-    For now, returns all active users since we don't have explicit assignment yet.
-    Care providers can create appointments for any active user.
+    Returns users that are actually assigned to the care provider through the assignment system.
     """
     if current_user.role == UserRole.CARE_PROVIDER:
-        # For care providers, return all active users they can create appointments for
+        # For care providers, return only users assigned to them
+        assignments = db.query(UserAssignment).filter(
+            UserAssignment.care_provider_id == current_user.id,
+            UserAssignment.is_active == True
+        ).all()
+
+        user_ids = [assignment.user_id for assignment in assignments]
+        users = db.query(User).filter(
+            User.id.in_(user_ids),
+            User.is_active == True
+        ).all() if user_ids else []
+
+    elif current_user.role == UserRole.ADMIN:
+        # Admins can see all active users
         users = db.query(User).filter(
             User.role == UserRole.USER,
             User.is_active == True
         ).all()
-    elif current_user.role == UserRole.ADMIN:
-        # Admins can see all users
-        users = db.query(User).filter(User.is_active == True).all()
     else:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -104,18 +113,18 @@ def create_appointment(
         raise HTTPException(status_code=status_code, detail=e.message)
 
 
-@router.get("/{appointment_id}", response_model=AppointmentSchema)
+@router.get("/{appointment_id}")
 def get_appointment(
     appointment_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Get a specific appointment by id.
+    Get a specific appointment by id with full user details.
     """
     try:
         appointment_service = AppointmentService(db)
-        appointment = appointment_service._get_appointment_with_permission(appointment_id, current_user)
+        appointment = appointment_service.get_appointment_with_details(appointment_id, current_user)
         return appointment
     except ServiceException as e:
         status_code = status.HTTP_404_NOT_FOUND if "not found" in e.message.lower() else status.HTTP_403_FORBIDDEN

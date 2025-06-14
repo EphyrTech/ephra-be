@@ -18,6 +18,8 @@ class AppointmentBase(BaseModel):
 # Properties to receive via API on creation
 class AppointmentCreate(AppointmentBase):
     user_id: Optional[str] = Field(None, description="User ID (required for care providers and admins)")
+    meeting_link: Optional[str] = Field(None, description="Custom meeting link (optional)")
+    notes: Optional[str] = Field(None, description="Session notes (optional)")
 
 # Properties to receive via API on update
 class AppointmentUpdate(BaseModel):
@@ -36,15 +38,18 @@ class Appointment(AppointmentBase):
     # User details for display
     user_name: Optional[str] = None
     user_email: Optional[str] = None
+    user_first_name: Optional[str] = None
+    user_last_name: Optional[str] = None
+    user_date_of_birth: Optional[str] = None
+    user_country: Optional[str] = None
     care_provider_name: Optional[str] = None
     care_provider_email: Optional[str] = None
+    care_provider_first_name: Optional[str] = None
+    care_provider_last_name: Optional[str] = None
 
     class Config:
         from_attributes = True
 
-# Detailed appointment with user and care provider info
+# Detailed appointment with user and care provider info (kept for backward compatibility)
 class AppointmentDetail(Appointment):
-    user_name: Optional[str] = None
-    user_email: Optional[str] = None
-    care_provider_name: Optional[str] = None
-    care_provider_email: Optional[str] = None
+    pass

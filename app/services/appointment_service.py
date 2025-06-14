@@ -67,7 +67,8 @@ class AppointmentService:
             start_time=appointment_data.start_time,
             end_time=appointment_data.end_time,
             status=AppointmentStatus.PENDING,
-            meeting_link=self._generate_meeting_link()
+            meeting_link=appointment_data.meeting_link or self._generate_meeting_link(),
+            notes=appointment_data.notes
         )
 
         self.db.add(appointment)
@@ -90,6 +91,8 @@ class AppointmentService:
             patient_user.first_name.label('user_first_name'),
             patient_user.last_name.label('user_last_name'),
             patient_user.email.label('user_email'),
+            patient_user.date_of_birth.label('user_date_of_birth'),
+            patient_user.country.label('user_country'),
             provider_user.name.label('care_provider_name'),
             provider_user.first_name.label('care_provider_first_name'),
             provider_user.last_name.label('care_provider_last_name'),
@@ -125,6 +128,11 @@ class AppointmentService:
             if not care_provider_name and (result.care_provider_first_name or result.care_provider_last_name):
                 care_provider_name = f"{result.care_provider_first_name or ''} {result.care_provider_last_name or ''}".strip()
 
+            # Format date of birth as string if available
+            user_date_of_birth = None
+            if result.user_date_of_birth:
+                user_date_of_birth = result.user_date_of_birth.isoformat() if hasattr(result.user_date_of_birth, 'isoformat') else str(result.user_date_of_birth)
+
             appointment_dict = {
                 'id': appointment.id,
                 'user_id': appointment.user_id,
@@ -138,8 +146,14 @@ class AppointmentService:
                 'updated_at': appointment.updated_at,
                 'user_name': user_name,
                 'user_email': result.user_email,
+                'user_first_name': result.user_first_name,
+                'user_last_name': result.user_last_name,
+                'user_date_of_birth': user_date_of_birth,
+                'user_country': result.user_country,
                 'care_provider_name': care_provider_name,
-                'care_provider_email': result.care_provider_email
+                'care_provider_email': result.care_provider_email,
+                'care_provider_first_name': result.care_provider_first_name,
+                'care_provider_last_name': result.care_provider_last_name
             }
             appointments.append(appointment_dict)
 
@@ -270,6 +284,87 @@ class AppointmentService:
         # Admins can access all appointments
 
         return appointment
+
+    def get_appointment_with_details(self, appointment_id: str, current_user: User) -> dict:
+        """Get appointment with full user details and check permissions"""
+        from sqlalchemy.orm import aliased
+
+        # Create aliases for user tables to avoid conflicts
+        patient_user = aliased(User)
+        provider_user = aliased(User)
+
+        # Query appointment with user details
+        result = self.db.query(
+            Appointment,
+            patient_user.name.label('user_name'),
+            patient_user.first_name.label('user_first_name'),
+            patient_user.last_name.label('user_last_name'),
+            patient_user.email.label('user_email'),
+            patient_user.date_of_birth.label('user_date_of_birth'),
+            patient_user.country.label('user_country'),
+            provider_user.name.label('care_provider_name'),
+            provider_user.first_name.label('care_provider_first_name'),
+            provider_user.last_name.label('care_provider_last_name'),
+            provider_user.email.label('care_provider_email')
+        ).join(
+            patient_user, Appointment.user_id == patient_user.id
+        ).join(
+            provider_user, Appointment.care_provider_id == provider_user.id
+        ).filter(
+            Appointment.id == appointment_id
+        ).first()
+
+        if not result:
+            raise NotFoundError("Appointment not found")
+
+        appointment = result[0]  # The Appointment object
+
+        # Check permissions
+        if current_user.role == UserRole.USER and appointment.user_id != current_user.id:
+            raise PermissionError("You can only access your own appointments")
+        elif current_user.role == UserRole.CARE_PROVIDER and appointment.care_provider_id != current_user.id:
+            raise PermissionError("You can only access appointments where you are the care provider")
+        # Admins can access all appointments
+
+        # Build user name from available fields
+        user_name = result.user_name
+        if not user_name and (result.user_first_name or result.user_last_name):
+            user_name = f"{result.user_first_name or ''} {result.user_last_name or ''}".strip()
+
+        # Build care provider name from available fields
+        care_provider_name = result.care_provider_name
+        if not care_provider_name and (result.care_provider_first_name or result.care_provider_last_name):
+            care_provider_name = f"{result.care_provider_first_name or ''} {result.care_provider_last_name or ''}".strip()
+
+        # Format date of birth as string if available
+        user_date_of_birth = None
+        if result.user_date_of_birth:
+            user_date_of_birth = result.user_date_of_birth.isoformat() if hasattr(result.user_date_of_birth, 'isoformat') else str(result.user_date_of_birth)
+
+        appointment_dict = {
+            'id': appointment.id,
+            'user_id': appointment.user_id,
+            'care_provider_id': appointment.care_provider_id,
+            'start_time': appointment.start_time,
+            'end_time': appointment.end_time,
+            'status': appointment.status,
+            'meeting_link': appointment.meeting_link,
+            'notes': appointment.notes,
+            'created_at': appointment.created_at,
+            'updated_at': appointment.updated_at,
+            'user_name': user_name,
+            'user_email': result.user_email,
+            'user_first_name': result.user_first_name,
+            'user_last_name': result.user_last_name,
+            'user_date_of_birth': user_date_of_birth,
+            'user_country': result.user_country,
+            'care_provider_name': care_provider_name,
+            'care_provider_email': result.care_provider_email,
+            'care_provider_first_name': result.care_provider_first_name,
+            'care_provider_last_name': result.care_provider_last_name
+        }
+
+        return appointment_dict
 
     def _generate_meeting_link(self) -> str:
         """Generate a meeting link (placeholder implementation)"""

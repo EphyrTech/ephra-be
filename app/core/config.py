@@ -48,6 +48,17 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
 
+    # Logto Configuration
+    LOGTO_ENDPOINT: str = os.getenv("LOGTO_ENDPOINT", "https://logto-wkc0gogw84o0g4owkswswc80.ephyrtech.com/")
+    LOGTO_APP_ID: str = os.getenv("LOGTO_APP_ID", "ttybvspaqdfky02zlxztd")
+    LOGTO_APP_SECRET: str = os.getenv("LOGTO_APP_SECRET", "cqyOfssoPOos02yuTAIv3qE4op0u6BRA")
+    LOGTO_REDIRECT_URI: str = os.getenv("LOGTO_REDIRECT_URI", "http://localhost:8000/v1/auth/logto/callback")
+
+    @property
+    def LOGTO_POST_LOGOUT_REDIRECT_URI(self) -> str:
+        """Get the post-logout redirect URI, defaulting to frontend URL."""
+        return os.getenv("LOGTO_POST_LOGOUT_REDIRECT_URI", self.FRONTEND_URL)
+
     # File Storage
     UPLOAD_DIRECTORY: str = os.getenv("UPLOAD_DIRECTORY", "uploads")
     MAX_UPLOAD_SIZE: int = int(os.getenv("MAX_UPLOAD_SIZE", str(10 * 1024 * 1024)))  # 10 MB
@@ -60,7 +71,7 @@ class Settings(BaseSettings):
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "noreply@example.com")
 
     # Frontend URL for links in emails
-    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:8001")
 
     # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))

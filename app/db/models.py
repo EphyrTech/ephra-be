@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, Date, ForeignKey, Integer, String, Text, Enum, Numeric, JSON
+from sqlalchemy import Boolean, Column, DateTime, Date, ForeignKey, Integer, String, Text, Enum, Numeric, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
@@ -38,6 +38,7 @@ class User(Base):
     country = Column(String)
     phone_number = Column(String)
     hashed_password = Column(String, nullable=True)  # Nullable for OAuth users
+    logto_user_id = Column(String, unique=True, nullable=True, index=True)  # Logto user ID
     role = Column(Enum(UserRole), default=UserRole.USER, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -133,6 +134,29 @@ class Appointment(Base):
     user = relationship("User", back_populates="appointments", foreign_keys=[user_id])
     care_provider = relationship("User", foreign_keys=[care_provider_id], overlaps="provided_appointments")
 
+class UserAssignment(Base):
+    """Assignment relationship between users and care providers"""
+    __tablename__ = "user_assignments"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    care_provider_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    assigned_at = Column(DateTime(timezone=True), server_default=func.now())
+    assigned_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # Admin who made the assignment
+    is_active = Column(Boolean, default=True)
+    notes = Column(Text)  # Optional notes about the assignment
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    care_provider = relationship("User", foreign_keys=[care_provider_id])
+    assigner = relationship("User", foreign_keys=[assigned_by])
+
+    # Ensure unique assignment per user-care provider pair
+    __table_args__ = (
+        UniqueConstraint('user_id', 'care_provider_id', name='unique_user_care_provider_assignment'),
+    )
+
+
 class MediaFile(Base):
     __tablename__ = "media_files"
 
@@ -146,3 +170,63 @@ class MediaFile(Base):
 
     # Relationships
     user = relationship("User", back_populates="media_files")
+
+
+class PersonalJournal(Base):
+    """Personal journal entries created by care providers and admins for patients"""
+    __tablename__ = "personal_journals"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    patient_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    author_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    # Entry datetime (when the entry is for)
+    entry_datetime = Column(DateTime(timezone=True), nullable=False)
+
+    # Content
+    title = Column(String, nullable=False)
+    content = Column(Text)
+
+    # Metadata
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Sharing settings
+    is_shared = Column(Boolean, default=False)  # Whether this entry can be shared with other care providers
+    shared_with_care_providers = Column(JSON)  # Array of care provider IDs who can view this entry
+
+    # Relationships
+    patient = relationship("User", foreign_keys=[patient_id])
+    author = relationship("User", foreign_keys=[author_id])
+    attachments = relationship("PersonalJournalAttachment", back_populates="journal", cascade="all, delete-orphan")
+
+
+class PersonalJournalAttachment(Base):
+    """Attachments for personal journal entries (files, voice recordings, URLs)"""
+    __tablename__ = "personal_journal_attachments"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    journal_id = Column(String, ForeignKey("personal_journals.id", ondelete="CASCADE"), nullable=False)
+
+    # Attachment type and data
+    attachment_type = Column(String, nullable=False)  # 'file', 'voice', 'url'
+
+    # For files and voice recordings
+    file_path = Column(String)  # Path to uploaded file
+    filename = Column(String)  # Original filename
+    file_type = Column(String)  # MIME type
+    file_size = Column(Integer)  # File size in bytes
+
+    # For voice recordings
+    duration_seconds = Column(Integer)  # Duration of voice recording
+    transcription = Column(Text)  # Transcribed text from voice recording
+
+    # For URLs
+    url = Column(String)  # URL link
+    url_title = Column(String)  # Optional title for the URL
+    url_description = Column(Text)  # Optional description for the URL
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    journal = relationship("PersonalJournal", back_populates="attachments")

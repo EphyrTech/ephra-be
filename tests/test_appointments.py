@@ -205,6 +205,110 @@ def test_care_provider_can_create_appointment_anytime(care_provider_client, test
     assert "meeting_link" in data
 
 
+def test_care_provider_can_add_custom_meeting_link(care_provider_client, test_user):
+    """
+    Test that care providers can add custom meeting links when creating appointments.
+    """
+    start_time = datetime.utcnow() + timedelta(days=1, hours=10)
+    end_time = start_time + timedelta(hours=1)
+    custom_meeting_link = "https://zoom.us/j/123456789"
+
+    response = care_provider_client.post(
+        "/appointments/",
+        json={
+            "user_id": test_user.id,
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "meeting_link": custom_meeting_link
+        }
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["user_id"] == test_user.id
+    assert data["status"] == "pending"
+    assert data["meeting_link"] == custom_meeting_link
+
+
+def test_care_provider_can_add_notes_to_appointment(care_provider_client, test_user):
+    """
+    Test that care providers can add notes when creating appointments.
+    """
+    start_time = datetime.utcnow() + timedelta(days=1, hours=16)
+    end_time = start_time + timedelta(hours=1)
+    appointment_notes = "Initial consultation - discuss treatment plan"
+
+    response = care_provider_client.post(
+        "/appointments/",
+        json={
+            "user_id": test_user.id,
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "notes": appointment_notes
+        }
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["user_id"] == test_user.id
+    assert data["status"] == "pending"
+    assert data["notes"] == appointment_notes
+
+
+def test_care_provider_can_add_both_meeting_link_and_notes(care_provider_client, test_user):
+    """
+    Test that care providers can add both meeting link and notes when creating appointments.
+    """
+    start_time = datetime.utcnow() + timedelta(days=2, hours=10)
+    end_time = start_time + timedelta(hours=1)
+    custom_meeting_link = "https://teams.microsoft.com/l/meetup-join/123"
+    appointment_notes = "Follow-up session - review progress and adjust goals"
+
+    response = care_provider_client.post(
+        "/appointments/",
+        json={
+            "user_id": test_user.id,
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "meeting_link": custom_meeting_link,
+            "notes": appointment_notes
+        }
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["user_id"] == test_user.id
+    assert data["status"] == "pending"
+    assert data["meeting_link"] == custom_meeting_link
+    assert data["notes"] == appointment_notes
+
+
+def test_care_provider_auto_generates_meeting_link_when_not_provided(care_provider_client, test_user):
+    """
+    Test that when no custom meeting link is provided, the system auto-generates one.
+    """
+    start_time = datetime.utcnow() + timedelta(days=1, hours=14)
+    end_time = start_time + timedelta(hours=1)
+
+    response = care_provider_client.post(
+        "/appointments/",
+        json={
+            "user_id": test_user.id,
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat()
+            # No meeting_link provided
+        }
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["user_id"] == test_user.id
+    assert data["status"] == "pending"
+    assert "meeting_link" in data
+    assert data["meeting_link"] is not None
+    assert data["meeting_link"].startswith("https://meet.example.com/")
+
+
 def test_regular_user_restricted_by_availability(authorized_client, care_provider_user):
     """
     Test that regular users are still restricted by care provider availability

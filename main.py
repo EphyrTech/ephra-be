@@ -18,7 +18,7 @@ from app.core.error_handlers import (
 )
 from app.services.exceptions import ServiceException
 from app.middleware import RateLimiter, CacheMiddleware
-from app.api import auth, users, journals, media, appointments, specialists, admin, care_providers
+from app.api import auth, users, journals, media, appointments, specialists, admin, care_providers, assignments, personal_journals
 from app.api import health, metrics, websockets
 
 # Setup logging
@@ -73,6 +73,14 @@ app = FastAPI(
         {
             "name": "Admin",
             "description": "Administrative functions for user and role management"
+        },
+        {
+            "name": "Personal Journals",
+            "description": "Personal journal entries created by care providers and admins for patients"
+        },
+        {
+            "name": "Assignments",
+            "description": "User-care provider assignment management"
         },
         {
             "name": "Media",
@@ -166,6 +174,8 @@ v1_router.include_router(media.router, prefix="/media", tags=["Media"])
 v1_router.include_router(appointments.router, prefix="/appointments", tags=["Appointments"])
 v1_router.include_router(specialists.router, prefix="/specialists", tags=["Specialists"])
 v1_router.include_router(care_providers.router, prefix="/care-providers", tags=["Care Providers"])
+v1_router.include_router(assignments.router, prefix="/assignments", tags=["Assignments"])
+v1_router.include_router(personal_journals.router, prefix="/personal-journals", tags=["Personal Journals"])
 v1_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 v1_router.include_router(health.router, tags=["Health"])
 v1_router.include_router(metrics.router, tags=["Monitoring"])

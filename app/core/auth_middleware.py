@@ -60,6 +60,19 @@ def validate_jwt(token: str) -> Dict[str, Any]:
     
     try:
         signing_key = jwks_client.get_signing_key_from_jwt(token)
+
+        # First decode without issuer validation to see what's in the token
+        payload_unverified = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=['RS256', 'ES256', 'ES384', 'ES512'],
+            options={'verify_signature': False, 'verify_aud': False, 'verify_iss': False}
+        )
+
+        print(f"Expected issuer: {ISSUER}")
+        print(f"Token issuer: {payload_unverified.get('iss', 'NOT_FOUND')}")
+
+        # Now decode with full validation
         payload = jwt.decode(
             token,
             signing_key.key,

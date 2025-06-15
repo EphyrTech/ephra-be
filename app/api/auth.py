@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import create_access_token, get_password_hash, verify_password
-from app.core.logto_client import create_logto_client, get_logto_config
-from app.services.logto_service import LogtoService
+from app.core.logto_client import get_logto_config
+from app.core.auth_middleware import verify_access_token, AuthInfo
 from app.db.database import get_db
 from app.db.models import User, UserRole
 from app.schemas.auth import Token, Login, GoogleAuth, PasswordReset, LogtoAuthResponse, LogtoConfig
@@ -131,177 +131,46 @@ def get_logto_configuration() -> Any:
     return get_logto_config()
 
 
-@router.get("/logto/sign-in")
-async def logto_sign_in(request: Request, response: Response) -> Any:
+@router.get("/protected")
+async def protected_endpoint(auth: AuthInfo = Depends(verify_access_token)) -> Any:
     """
-    Initiate Logto sign-in process.
+    Example protected endpoint that requires JWT authentication.
+    This demonstrates how to protect API endpoints with Logto JWT validation.
     """
-    logger.info("Initiating Logto sign-in process")
+    return {
+        "message": "This is a protected endpoint",
+        "user": auth.to_dict()
+    }
 
-    client = create_logto_client(request, response)
-    if not client:
-        logger.error("Logto client not configured")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Logto authentication is not configured"
-        )
 
+@router.get("/me", response_model=UserSchema)
+async def get_current_user(auth: AuthInfo = Depends(verify_access_token), db: Session = Depends(get_db)) -> Any:
+    """
+    Get current user information from JWT token.
+    This endpoint validates the JWT token and returns the user information.
+    """
     try:
-        logger.info("Creating sign-in URL")
-        sign_in_url = await client.signIn(
-            redirectUri=settings.LOGTO_REDIRECT_URI,
-        )
-        logger.info(f"Sign-in URL created: {sign_in_url}")
+        # Find user by Logto subject ID
+        user = db.query(User).filter(User.logto_user_id == auth.sub).first()
 
-        # Create the redirect response
-        redirect_response = RedirectResponse(url=sign_in_url)
-
-        # Ensure any session cookies set by the client are included in the response
-        # The create_logto_client should have set session data via the storage
-        logger.info("Returning redirect response with session cookies")
-        return redirect_response
-
-    except Exception as e:
-        logger.error(f"Failed to initiate sign-in: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to initiate sign-in: {str(e)}"
-        )
-
-
-@router.get("/logto/sign-up")
-async def logto_sign_up(request: Request, response: Response) -> Any:
-    """
-    Initiate Logto sign-up process.
-    """
-    client = create_logto_client(request, response)
-    if not client:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Logto authentication is not configured"
-        )
-
-    try:
-        sign_in_url = await client.signIn(
-            redirectUri=settings.LOGTO_REDIRECT_URI,
-            interactionMode="signUp",
-        )
-        return RedirectResponse(url=sign_in_url)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to initiate sign-up: {str(e)}"
-        )
-
-
-@router.get("/logto/callback")
-async def logto_callback(request: Request, response: Response, db: Session = Depends(get_db)) -> Any:
-    """
-    Handle Logto authentication callback and redirect to frontend.
-    """
-    logger.info(f"Logto callback received: {request.url}")
-
-    client = create_logto_client(request, response)
-    if not client:
-        logger.error("Logto client not configured")
-        # Redirect to frontend with error
-        return RedirectResponse(url=f"{settings.FRONTEND_URL}/?error=logto_not_configured")
-
-    try:
-        # Log the current session state for debugging
-        logger.info(f"Request cookies: {request.cookies}")
-
-        # Handle the sign-in callback
-        logger.info("Handling sign-in callback...")
-        await client.handleSignInCallback(str(request.url))
-
-        # Check if client is authenticated after callback
-        if not client.isAuthenticated():
-            logger.error("Client not authenticated after callback")
-            return RedirectResponse(url=f"{settings.FRONTEND_URL}/?error=authentication_failed")
-
-        # Create Logto service and authenticate user
-        logger.info("Creating Logto service and authenticating user...")
-        logto_service = LogtoService(db, client)
-        auth_result = await logto_service.authenticate_user()
-
-        if not auth_result:
-            logger.error("Failed to authenticate user with Logto service")
-            # Redirect to frontend with error
-            return RedirectResponse(url=f"{settings.FRONTEND_URL}/?error=authentication_failed")
-
-        user, access_token = auth_result
-        logger.info(f"User authenticated successfully: {user.email}")
-
-        # Redirect to frontend with success and token
-        # The frontend can extract the token from the URL and store it
-        return RedirectResponse(url=f"{settings.FRONTEND_URL}/?token={access_token}&user_id={user.id}")
-
-    except Exception as e:
-        logger.error(f"Logto callback error: {e}", exc_info=True)
-        # Redirect to frontend with error
-        error_message = str(e).replace(' ', '_').replace(':', '').replace('-', '_')
-        return RedirectResponse(url=f"{settings.FRONTEND_URL}/?error={error_message}")
-
-
-@router.get("/logto/sign-out")
-async def logto_sign_out(request: Request, response: Response) -> Any:
-    """
-    Initiate Logto sign-out process.
-    """
-    client = create_logto_client(request, response)
-    if not client:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Logto authentication is not configured"
-        )
-
-    try:
-        sign_out_url = await client.signOut(
-            postLogoutRedirectUri=settings.LOGTO_POST_LOGOUT_REDIRECT_URI
-        )
-        return RedirectResponse(url=sign_out_url)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to initiate sign-out: {str(e)}"
-        )
-
-
-@router.get("/logto/user", response_model=UserSchema)
-async def get_logto_user(request: Request, response: Response, db: Session = Depends(get_db)) -> Any:
-    """
-    Get current user information from Logto session.
-    """
-    client = create_logto_client(request, response)
-    if not client:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Logto authentication is not configured"
-        )
-
-    try:
-        if not client.isAuthenticated():
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Not authenticated"
+        if not user:
+            # If user doesn't exist, create a new one
+            # In a real application, you might want to get user info from Logto's userinfo endpoint
+            user = User(
+                email=f"user_{auth.sub}@logto.local",  # Placeholder email
+                logto_user_id=auth.sub,
+                role=UserRole.USER,
+                hashed_password=None,  # No password for Logto users
+                name="Logto User",  # Placeholder name
             )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
 
-        logto_service = LogtoService(db, client)
-        auth_result = await logto_service.authenticate_user()
-
-        if not auth_result:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication failed"
-            )
-
-        user, _ = auth_result
         return user
-    except HTTPException:
-        raise
     except Exception as e:
+        logger.error(f"Failed to get current user: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get user info: {str(e)}"
+            detail="Failed to get user information"
         )

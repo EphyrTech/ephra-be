@@ -26,6 +26,9 @@ psutil==5.9.6
 # HTTP client for security checks
 requests==2.31.0
 
+# JWT validation for Logto
+PyJWT[crypto]==2.8.0
+
 # Logging
 # Using standard Python logging module
 

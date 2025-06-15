@@ -45,5 +45,6 @@ class LogtoConfig(BaseModel):
     """Logto configuration for frontend."""
     endpoint: str
     appId: str
-    redirectUri: str
-    postLogoutRedirectUri: str
+    # Note: redirectUri and postLogoutRedirectUri are now handled dynamically by the frontend
+    redirectUri: Optional[str] = None
+    postLogoutRedirectUri: Optional[str] = None

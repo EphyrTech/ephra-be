@@ -52,12 +52,9 @@ class Settings(BaseSettings):
     LOGTO_ENDPOINT: str = os.getenv("LOGTO_ENDPOINT", "https://logto-wkc0gogw84o0g4owkswswc80.ephyrtech.com/")
     LOGTO_APP_ID: str = os.getenv("LOGTO_APP_ID", "ttybvspaqdfky02zlxztd")
     LOGTO_APP_SECRET: str = os.getenv("LOGTO_APP_SECRET", "cqyOfssoPOos02yuTAIv3qE4op0u6BRA")
-    LOGTO_REDIRECT_URI: str = os.getenv("LOGTO_REDIRECT_URI", "http://localhost:8000/v1/auth/logto/callback")
 
-    @property
-    def LOGTO_POST_LOGOUT_REDIRECT_URI(self) -> str:
-        """Get the post-logout redirect URI, defaulting to frontend URL."""
-        return os.getenv("LOGTO_POST_LOGOUT_REDIRECT_URI", self.FRONTEND_URL)
+    # Note: Redirect URIs are now handled dynamically by the frontend
+    # The backend only validates JWT tokens and doesn't need static redirect URIs
 
     # File Storage
     UPLOAD_DIRECTORY: str = os.getenv("UPLOAD_DIRECTORY", "uploads")

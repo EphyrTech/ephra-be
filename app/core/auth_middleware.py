@@ -16,8 +16,10 @@ logger = logging.getLogger(__name__)
 # Initialize JWKS client for JWT validation
 jwks_client = None
 if settings.LOGTO_ENDPOINT:
-    JWKS_URI = f'{settings.LOGTO_ENDPOINT}/oidc/jwks'
-    ISSUER = f'{settings.LOGTO_ENDPOINT}/oidc'
+    # Remove trailing slash to avoid double slashes
+    endpoint = settings.LOGTO_ENDPOINT.rstrip('/')
+    JWKS_URI = f'{endpoint}/oidc/jwks'
+    ISSUER = f'{endpoint}/oidc'
     jwks_client = PyJWKClient(JWKS_URI)
 
 security = HTTPBearer()
@@ -25,14 +27,18 @@ security = HTTPBearer()
 
 class AuthInfo:
     """Authentication information extracted from JWT token."""
-    
+
     def __init__(self, sub: str, client_id: str = None, organization_id: str = None,
-                 scopes: List[str] = None, audience: List[str] = None):
+                 scopes: List[str] = None, audience: List[str] = None,
+                 email: str = None, name: str = None, given_name: str = None):
         self.sub = sub
         self.client_id = client_id
         self.organization_id = organization_id
         self.scopes = scopes or []
         self.audience = audience or []
+        self.email = email
+        self.name = name
+        self.given_name = given_name
 
     def to_dict(self):
         return {
@@ -61,18 +67,7 @@ def validate_jwt(token: str) -> Dict[str, Any]:
     try:
         signing_key = jwks_client.get_signing_key_from_jwt(token)
 
-        # First decode without issuer validation to see what's in the token
-        payload_unverified = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=['RS256', 'ES256', 'ES384', 'ES512'],
-            options={'verify_signature': False, 'verify_aud': False, 'verify_iss': False}
-        )
-
-        print(f"Expected issuer: {ISSUER}")
-        print(f"Token issuer: {payload_unverified.get('iss', 'NOT_FOUND')}")
-
-        # Now decode with full validation
+        # Decode with full validation
         payload = jwt.decode(
             token,
             signing_key.key,
@@ -94,13 +89,16 @@ def create_auth_info(payload: Dict[str, Any]) -> AuthInfo:
     audience = payload.get('aud', [])
     if isinstance(audience, str):
         audience = [audience]
-    
+
     return AuthInfo(
         sub=payload.get('sub'),
         client_id=payload.get('client_id'),
         organization_id=payload.get('organization_id'),
         scopes=scopes,
-        audience=audience
+        audience=audience,
+        email=payload.get('email'),
+        name=payload.get('name'),
+        given_name=payload.get('given_name')
     )
 
 

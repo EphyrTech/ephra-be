@@ -155,13 +155,16 @@ async def get_current_user(auth: AuthInfo = Depends(verify_access_token), db: Se
 
         if not user:
             # If user doesn't exist, create a new one
-            # In a real application, you might want to get user info from Logto's userinfo endpoint
+            # Extract user info from JWT payload if available
+            email = getattr(auth, 'email', None) or f"user_{auth.sub}@ephyrtech.com"
+            name = getattr(auth, 'name', None) or getattr(auth, 'given_name', None) or "Logto User"
+
             user = User(
-                email=f"user_{auth.sub}@logto.local",  # Placeholder email
+                email=email,
                 logto_user_id=auth.sub,
                 role=UserRole.USER,
                 hashed_password=None,  # No password for Logto users
-                name="Logto User",  # Placeholder name
+                name=name,
             )
             db.add(user)
             db.commit()

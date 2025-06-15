@@ -49,9 +49,9 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
 
     # Logto Configuration
-    LOGTO_ENDPOINT: str = os.getenv("LOGTO_ENDPOINT", "https://logto-wkc0gogw84o0g4owkswswc80.ephyrtech.com/")
-    LOGTO_APP_ID: str = os.getenv("LOGTO_APP_ID", "ttybvspaqdfky02zlxztd")
-    LOGTO_APP_SECRET: str = os.getenv("LOGTO_APP_SECRET", "cqyOfssoPOos02yuTAIv3qE4op0u6BRA")
+    LOGTO_ENDPOINT: str = os.getenv("LOGTO_ENDPOINT", "")
+    LOGTO_APP_ID: str = os.getenv("LOGTO_APP_ID", "")
+    LOGTO_APP_SECRET: str = os.getenv("LOGTO_APP_SECRET", "")
 
     # Note: Redirect URIs are now handled dynamically by the frontend
     # The backend only validates JWT tokens and doesn't need static redirect URIs

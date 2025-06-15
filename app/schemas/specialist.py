@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, field_validator
 from typing import List, Optional
 from datetime import datetime
 from enum import Enum
@@ -10,10 +10,17 @@ class SpecialistType(str, Enum):
 # Shared properties
 class SpecialistBase(BaseModel):
     name: str
-    email: EmailStr
+    email: str
     specialist_type: SpecialistType
     bio: Optional[str] = None
     hourly_rate: int  # In cents
+
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        # Import here to avoid circular imports
+        from app.schemas.user import validate_email_field
+        return validate_email_field(v)
 
 # Properties to return via API
 class Specialist(SpecialistBase):

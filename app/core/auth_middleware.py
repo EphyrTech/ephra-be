@@ -63,7 +63,7 @@ def validate_jwt(token: str) -> Dict[str, Any]:
         payload = jwt.decode(
             token,
             signing_key.key,
-            algorithms=['RS256'],
+            algorithms=['RS256', 'ES256', 'ES384', 'ES512'],  # Support multiple algorithms
             issuer=ISSUER,
             options={'verify_aud': False}  # We'll verify audience manually
         )

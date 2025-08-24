@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+from psycopg2 import sql, IntegrityError
 
 from app.core.config import settings
 from app.core.security import create_access_token, get_password_hash, verify_password
@@ -13,13 +14,23 @@ from app.core.logto_client import get_logto_config
 from app.core.auth_middleware import verify_access_token, AuthInfo
 from app.db.database import get_db
 from app.db.models import User, UserRole
-from app.schemas.auth import Token, Login, GoogleAuth, PasswordReset, LogtoAuthResponse, LogtoConfig
+from app.schemas.auth import (
+    Token,
+    Login,
+    GoogleAuth,
+    PasswordReset,
+    LogtoAuthResponse,
+    LogtoConfig,
+)
 from app.schemas.user import UserCreate, User as UserSchema
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.post("/register", response_model=UserSchema, status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/register", response_model=UserSchema, status_code=status.HTTP_201_CREATED
+)
 def register(user_in: UserCreate, db: Session = Depends(get_db)) -> Any:
     """
     Register a new user.
@@ -49,6 +60,7 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)) -> Any:
     db.refresh(db_user)
     return db_user
 
+
 @router.post("/login", response_model=Token)
 def login(login_data: Login, db: Session = Depends(get_db)) -> Any:
     """
@@ -70,8 +82,11 @@ def login(login_data: Login, db: Session = Depends(get_db)) -> Any:
         "token_type": "bearer",
     }
 
+
 @router.post("/token", response_model=Token)
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)) -> Any:
+def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+) -> Any:
     """
     OAuth2 compatible token login for Swagger UI authorization.
     Use this endpoint for the "Authorize" button in Swagger UI.
@@ -92,6 +107,7 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
         "token_type": "bearer",
     }
 
+
 @router.post("/google", response_model=Token)
 def google_auth(google_data: GoogleAuth, db: Session = Depends(get_db)) -> Any:
     """
@@ -105,6 +121,7 @@ def google_auth(google_data: GoogleAuth, db: Session = Depends(get_db)) -> Any:
         "access_token": "mock_google_token",
         "token_type": "bearer",
     }
+
 
 @router.post("/reset-password", status_code=status.HTTP_200_OK)
 def reset_password(reset_data: PasswordReset, db: Session = Depends(get_db)) -> Any:
@@ -123,6 +140,7 @@ def reset_password(reset_data: PasswordReset, db: Session = Depends(get_db)) -> 
 
 # Logto Authentication Endpoints
 
+
 @router.get("/logto/config", response_model=LogtoConfig)
 def get_logto_configuration() -> Any:
     """
@@ -137,14 +155,13 @@ async def protected_endpoint(auth: AuthInfo = Depends(verify_access_token)) -> A
     Example protected endpoint that requires JWT authentication.
     This demonstrates how to protect API endpoints with Logto JWT validation.
     """
-    return {
-        "message": "This is a protected endpoint",
-        "user": auth.to_dict()
-    }
+    return {"message": "This is a protected endpoint", "user": auth.to_dict()}
 
 
 @router.get("/me", response_model=UserSchema)
-async def get_current_user(auth: AuthInfo = Depends(verify_access_token), db: Session = Depends(get_db)) -> Any:
+async def get_current_user(
+    auth: AuthInfo = Depends(verify_access_token), db: Session = Depends(get_db)
+) -> Any:
     """
     Get current user information from JWT token.
     This endpoint validates the JWT token and returns the user information.
@@ -158,15 +175,17 @@ async def get_current_user(auth: AuthInfo = Depends(verify_access_token), db: Se
             # Extract user info from JWT payload if available
 
             # Debug: Log all available claims from Logto JWT
-            logger.info(f"Creating new user from Logto JWT. Available claims: {vars(auth)}")
+            logger.info(
+                f"Creating new user from Logto JWT. Available claims: {vars(auth)}"
+            )
 
-            raw_email = getattr(auth, 'email', None)
+            raw_email = getattr(auth, "email", None)
             logger.info(f"Raw email from Logto: {raw_email}")
 
             # Handle Logto .local domain emails in development
-            if raw_email and raw_email.endswith('@logto.local'):
+            if raw_email and raw_email.endswith("@logto.local"):
                 # Convert .local emails to valid domain
-                username = raw_email.split('@')[0]
+                username = raw_email.split("@")[0]
                 email = f"{username}@ephyrtech.com"
                 logger.info(f"Converted .local email: {raw_email} -> {email}")
             elif raw_email:
@@ -177,7 +196,11 @@ async def get_current_user(auth: AuthInfo = Depends(verify_access_token), db: Se
                 email = f"user_{auth.sub}@ephyrtech.com"
                 logger.warning(f"No email provided by Logto, using fallback: {email}")
 
-            name = getattr(auth, 'name', None) or getattr(auth, 'given_name', None) or "Logto User"
+            name = (
+                getattr(auth, "name", None)
+                or getattr(auth, "given_name", None)
+                or "NoName Persona"
+            )
             logger.info(f"User name from Logto: {name}")
 
             user = User(
@@ -192,9 +215,22 @@ async def get_current_user(auth: AuthInfo = Depends(verify_access_token), db: Se
             db.refresh(user)
 
         return user
-    except Exception as e:
-        logger.error(f"Failed to get current user: {e}")
+    except IntegrityError as e:
+        logger.error(f"Integrity error while creating user: {e}")
+        db.rollback()
+        if "duplicate key value violates unique constraint" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User already exists",
+            )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get user information"
+            detail="Failed to get user information",
+        )
+    except Exception as e:
+        logger.error(f"Failed to get current user: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get user information",
         )

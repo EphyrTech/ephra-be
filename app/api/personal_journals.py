@@ -1,29 +1,37 @@
 """API endpoints for personal journal entries created by care providers and admins"""
 
-import os
 import logging
-from typing import Any, List, Optional
+import os
 from datetime import datetime, timedelta
+from typing import Any, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import and_, desc, func, or_
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, desc, func
 
+from app.api.deps import get_current_user_from_auth
+from app.api.role_deps import require_care_or_admin
 from app.db.database import get_db
-from app.db.models import PersonalJournal, PersonalJournalAttachment, User, UserRole, UserAssignment
+from app.db.models import (
+    PersonalJournal,
+    PersonalJournalAttachment,
+    User,
+    UserAssignment,
+    UserRole,
+)
+from app.schemas.personal_journal import PersonalJournal as PersonalJournalSchema
 from app.schemas.personal_journal import (
-    PersonalJournal as PersonalJournalSchema,
+    PersonalJournalAttachment as PersonalJournalAttachmentSchema,
+)
+from app.schemas.personal_journal import (
+    PersonalJournalAttachmentCreate,
     PersonalJournalCreate,
+    PersonalJournalStats,
     PersonalJournalUpdate,
     PersonalJournalWithDetails,
-    PersonalJournalAttachmentCreate,
-    PersonalJournalAttachment as PersonalJournalAttachmentSchema,
-    PersonalJournalStats,
     VoiceTranscriptionRequest,
     VoiceTranscriptionResponse,
 )
-from app.api.deps import get_current_user
-from app.api.role_deps import require_care_or_admin
 from app.services.voice_transcription import transcribe_voice_file
 
 router = APIRouter()
@@ -36,74 +44,88 @@ def _check_patient_access(db: Session, current_user: User, patient_id: str) -> U
     Returns the patient user object if access is granted.
     """
     # Get the patient
-    patient = db.query(User).filter(
-        User.id == patient_id,
-        User.role == UserRole.USER,
-        User.is_active == True
-    ).first()
-    
+    patient = (
+        db.query(User)
+        .filter(
+            User.id == patient_id, User.role == UserRole.USER, User.is_active == True
+        )
+        .first()
+    )
+
     if not patient:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Patient not found or not a regular user"
+            detail="Patient not found or not a regular user",
         )
-    
+
     # Admins have access to all patients
     if current_user.role == UserRole.ADMIN:
         return patient
-    
+
     # Care providers can only access assigned patients
     if current_user.role == UserRole.CARE_PROVIDER:
-        assignment = db.query(UserAssignment).filter(
-            UserAssignment.user_id == patient_id,
-            UserAssignment.care_provider_id == current_user.id,
-            UserAssignment.is_active == True
-        ).first()
-        
+        assignment = (
+            db.query(UserAssignment)
+            .filter(
+                UserAssignment.user_id == patient_id,
+                UserAssignment.care_provider_id == current_user.id,
+                UserAssignment.is_active == True,
+            )
+            .first()
+        )
+
         if not assignment:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied. You are not assigned to this patient."
+                detail="Access denied. You are not assigned to this patient.",
             )
-        
+
         return patient
-    
+
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Access denied. Insufficient permissions."
+        detail="Access denied. Insufficient permissions.",
     )
 
 
-def _check_journal_access(db: Session, current_user: User, journal: PersonalJournal) -> bool:
+def _check_journal_access(
+    db: Session, current_user: User, journal: PersonalJournal
+) -> bool:
     """
     Check if the current user has access to view/edit a specific journal entry.
     """
     # Author can always access their own entries
     if journal.author_id == current_user.id:
         return True
-    
+
     # Admins can access all entries
     if current_user.role == UserRole.ADMIN:
         return True
-    
+
     # Care providers can access shared entries for their assigned patients
     if current_user.role == UserRole.CARE_PROVIDER:
         # Check if user is assigned to the patient
-        assignment = db.query(UserAssignment).filter(
-            UserAssignment.user_id == journal.patient_id,
-            UserAssignment.care_provider_id == current_user.id,
-            UserAssignment.is_active == True
-        ).first()
-        
+        assignment = (
+            db.query(UserAssignment)
+            .filter(
+                UserAssignment.user_id == journal.patient_id,
+                UserAssignment.care_provider_id == current_user.id,
+                UserAssignment.is_active == True,
+            )
+            .first()
+        )
+
         if assignment and journal.is_shared:
             # Check if explicitly shared with this care provider
-            if (journal.shared_with_care_providers and 
-                current_user.id in journal.shared_with_care_providers):
+            if (
+                journal.shared_with_care_providers
+                and current_user.id in journal.shared_with_care_providers
+            ):
                 return True
             # If no specific sharing list, all care providers of the patient can view
             if not journal.shared_with_care_providers:
                 return True
-    
+
     return False
 
 
@@ -113,8 +135,12 @@ def get_personal_journals(
     limit: int = 100,
     patient_id: Optional[str] = Query(None, description="Filter by patient ID"),
     author_id: Optional[str] = Query(None, description="Filter by author ID"),
-    from_date: Optional[datetime] = Query(None, description="Filter entries from this date"),
-    to_date: Optional[datetime] = Query(None, description="Filter entries to this date"),
+    from_date: Optional[datetime] = Query(
+        None, description="Filter entries from this date"
+    ),
+    to_date: Optional[datetime] = Query(
+        None, description="Filter entries to this date"
+    ),
     current_user: User = Depends(require_care_or_admin),
     db: Session = Depends(get_db),
 ) -> Any:
@@ -124,15 +150,18 @@ def get_personal_journals(
     - Care providers: Can see their own entries and shared entries for assigned patients
     """
     query = db.query(PersonalJournal)
-    
+
     # Apply role-based filtering
     if current_user.role == UserRole.CARE_PROVIDER:
         # Get assigned patient IDs
         assigned_patient_ids = [
-            assignment.user_id for assignment in db.query(UserAssignment).filter(
+            assignment.user_id
+            for assignment in db.query(UserAssignment)
+            .filter(
                 UserAssignment.care_provider_id == current_user.id,
-                UserAssignment.is_active == True
-            ).all()
+                UserAssignment.is_active == True,
+            )
+            .all()
         ]
 
         # Filter to own entries or shared entries for assigned patients
@@ -141,42 +170,42 @@ def get_personal_journals(
                 PersonalJournal.author_id == current_user.id,
                 and_(
                     PersonalJournal.patient_id.in_(assigned_patient_ids),
-                    PersonalJournal.is_shared == True
-                )
+                    PersonalJournal.is_shared == True,
+                ),
             )
         )
-    
+
     # Apply additional filters
     if patient_id:
         # Verify access to this patient
         _check_patient_access(db, current_user, patient_id)
         query = query.filter(PersonalJournal.patient_id == patient_id)
-    
+
     if author_id:
         query = query.filter(PersonalJournal.author_id == author_id)
-    
+
     if from_date:
         query = query.filter(PersonalJournal.entry_datetime >= from_date)
-    
+
     if to_date:
         query = query.filter(PersonalJournal.entry_datetime <= to_date)
-    
+
     # Order by entry datetime (most recent first)
     query = query.order_by(desc(PersonalJournal.entry_datetime))
-    
+
     journals = query.offset(skip).limit(limit).all()
-    
+
     # Build response with additional details
     result = []
     for journal in journals:
         # Verify access to this specific journal
         if not _check_journal_access(db, current_user, journal):
             continue
-            
+
         # Get patient and author details
         patient = db.query(User).filter(User.id == journal.patient_id).first()
         author = db.query(User).filter(User.id == journal.author_id).first()
-        
+
         journal_dict = {
             **journal.__dict__,
             "patient_name": patient.name if patient else None,
@@ -190,11 +219,13 @@ def get_personal_journals(
             "author_email": author.email if author else None,
         }
         result.append(journal_dict)
-    
+
     return result
 
 
-@router.post("/", response_model=PersonalJournalSchema, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/", response_model=PersonalJournalSchema, status_code=status.HTTP_201_CREATED
+)
 def create_personal_journal(
     journal_in: PersonalJournalCreate,
     current_user: User = Depends(require_care_or_admin),
@@ -205,7 +236,7 @@ def create_personal_journal(
     """
     # Verify access to the patient
     _check_patient_access(db, current_user, journal_in.patient_id)
-    
+
     # Create the journal entry
     journal = PersonalJournal(
         patient_id=journal_in.patient_id,
@@ -216,23 +247,22 @@ def create_personal_journal(
         is_shared=journal_in.is_shared or False,
         shared_with_care_providers=journal_in.shared_with_care_providers,
     )
-    
+
     db.add(journal)
     db.commit()
     db.refresh(journal)
-    
+
     # Add attachments if provided
     if journal_in.attachments:
         for attachment_data in journal_in.attachments:
             attachment = PersonalJournalAttachment(
-                journal_id=journal.id,
-                **attachment_data.model_dump()
+                journal_id=journal.id, **attachment_data.model_dump()
             )
             db.add(attachment)
-        
+
         db.commit()
         db.refresh(journal)
-    
+
     return journal
 
 
@@ -246,20 +276,19 @@ def get_personal_journal(
     Get a specific personal journal entry by ID.
     """
     journal = db.query(PersonalJournal).filter(PersonalJournal.id == journal_id).first()
-    
+
     if not journal:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Journal entry not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found"
         )
-    
+
     # Check access permissions
     if not _check_journal_access(db, current_user, journal):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. You don't have permission to view this journal entry."
+            detail="Access denied. You don't have permission to view this journal entry.",
         )
-    
+
     return journal
 
 
@@ -275,28 +304,27 @@ def update_personal_journal(
     Only the author or admin can update entries.
     """
     journal = db.query(PersonalJournal).filter(PersonalJournal.id == journal_id).first()
-    
+
     if not journal:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Journal entry not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found"
         )
-    
+
     # Only author or admin can update
     if journal.author_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Only the author or admin can update this entry."
+            detail="Access denied. Only the author or admin can update this entry.",
         )
-    
+
     # Update fields
     update_data = journal_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(journal, field, value)
-    
+
     db.commit()
     db.refresh(journal)
-    
+
     return journal
 
 
@@ -311,26 +339,29 @@ def delete_personal_journal(
     Only the author or admin can delete entries.
     """
     journal = db.query(PersonalJournal).filter(PersonalJournal.id == journal_id).first()
-    
+
     if not journal:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Journal entry not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found"
         )
-    
+
     # Only author or admin can delete
     if journal.author_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Only the author or admin can delete this entry."
+            detail="Access denied. Only the author or admin can delete this entry.",
         )
-    
+
     db.delete(journal)
     db.commit()
 
 
 # Attachment endpoints
-@router.post("/{journal_id}/attachments", response_model=PersonalJournalAttachmentSchema, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{journal_id}/attachments",
+    response_model=PersonalJournalAttachmentSchema,
+    status_code=status.HTTP_201_CREATED,
+)
 def add_journal_attachment(
     journal_id: str,
     attachment_in: PersonalJournalAttachmentCreate,
@@ -344,20 +375,18 @@ def add_journal_attachment(
 
     if not journal:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Journal entry not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found"
         )
 
     # Only author or admin can add attachments
     if journal.author_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Only the author or admin can add attachments."
+            detail="Access denied. Only the author or admin can add attachments.",
         )
 
     attachment = PersonalJournalAttachment(
-        journal_id=journal_id,
-        **attachment_in.model_dump()
+        journal_id=journal_id, **attachment_in.model_dump()
     )
 
     db.add(attachment)
@@ -367,7 +396,9 @@ def add_journal_attachment(
     return attachment
 
 
-@router.get("/{journal_id}/attachments", response_model=List[PersonalJournalAttachmentSchema])
+@router.get(
+    "/{journal_id}/attachments", response_model=List[PersonalJournalAttachmentSchema]
+)
 def get_journal_attachments(
     journal_id: str,
     current_user: User = Depends(require_care_or_admin),
@@ -380,20 +411,21 @@ def get_journal_attachments(
 
     if not journal:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Journal entry not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found"
         )
 
     # Check access permissions
     if not _check_journal_access(db, current_user, journal):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. You don't have permission to view this journal entry."
+            detail="Access denied. You don't have permission to view this journal entry.",
         )
 
-    attachments = db.query(PersonalJournalAttachment).filter(
-        PersonalJournalAttachment.journal_id == journal_id
-    ).all()
+    attachments = (
+        db.query(PersonalJournalAttachment)
+        .filter(PersonalJournalAttachment.journal_id == journal_id)
+        .all()
+    )
 
     return attachments
 
@@ -407,32 +439,35 @@ def delete_journal_attachment(
     """
     Delete a journal attachment.
     """
-    attachment = db.query(PersonalJournalAttachment).filter(
-        PersonalJournalAttachment.id == attachment_id
-    ).first()
+    attachment = (
+        db.query(PersonalJournalAttachment)
+        .filter(PersonalJournalAttachment.id == attachment_id)
+        .first()
+    )
 
     if not attachment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Attachment not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found"
         )
 
     # Get the journal to check permissions
-    journal = db.query(PersonalJournal).filter(
-        PersonalJournal.id == attachment.journal_id
-    ).first()
+    journal = (
+        db.query(PersonalJournal)
+        .filter(PersonalJournal.id == attachment.journal_id)
+        .first()
+    )
 
     if not journal:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Associated journal entry not found"
+            detail="Associated journal entry not found",
         )
 
     # Only author or admin can delete attachments
     if journal.author_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Only the author or admin can delete attachments."
+            detail="Access denied. Only the author or admin can delete attachments.",
         )
 
     db.delete(attachment)
@@ -454,10 +489,13 @@ def get_personal_journal_stats(
     if current_user.role == UserRole.CARE_PROVIDER:
         # Get assigned patient IDs
         assigned_patient_ids = [
-            assignment.user_id for assignment in db.query(UserAssignment).filter(
+            assignment.user_id
+            for assignment in db.query(UserAssignment)
+            .filter(
                 UserAssignment.care_provider_id == current_user.id,
-                UserAssignment.is_active == True
-            ).all()
+                UserAssignment.is_active == True,
+            )
+            .all()
         ]
 
         # Filter to own entries or shared entries for assigned patients
@@ -466,8 +504,8 @@ def get_personal_journal_stats(
                 PersonalJournal.author_id == current_user.id,
                 and_(
                     PersonalJournal.patient_id.in_(assigned_patient_ids),
-                    PersonalJournal.is_shared == True
-                )
+                    PersonalJournal.is_shared == True,
+                ),
             )
         )
 
@@ -487,34 +525,46 @@ def get_personal_journal_stats(
     ).count()
 
     # Total patients with entries
-    total_patients_with_entries = base_query.distinct(PersonalJournal.patient_id).count()
+    total_patients_with_entries = base_query.distinct(
+        PersonalJournal.patient_id
+    ).count()
 
     # Most active author (for admins) or current user stats (for care providers)
     most_active_author = None
     if current_user.role == UserRole.ADMIN:
-        author_stats = db.query(
-            PersonalJournal.author_id,
-            func.count(PersonalJournal.id).label('entry_count')
-        ).group_by(PersonalJournal.author_id).order_by(
-            func.count(PersonalJournal.id).desc()
-        ).first()
+        author_stats = (
+            db.query(
+                PersonalJournal.author_id,
+                func.count(PersonalJournal.id).label("entry_count"),
+            )
+            .group_by(PersonalJournal.author_id)
+            .order_by(func.count(PersonalJournal.id).desc())
+            .first()
+        )
 
         if author_stats:
             author = db.query(User).filter(User.id == author_stats.author_id).first()
-            most_active_author = f"{author.first_name} {author.last_name}" if author else "Unknown"
+            most_active_author = (
+                f"{author.first_name} {author.last_name}" if author else "Unknown"
+            )
 
     # Most documented patient
-    patient_stats = base_query.with_entities(
-        PersonalJournal.patient_id,
-        func.count(PersonalJournal.id).label('entry_count')
-    ).group_by(PersonalJournal.patient_id).order_by(
-        func.count(PersonalJournal.id).desc()
-    ).first()
+    patient_stats = (
+        base_query.with_entities(
+            PersonalJournal.patient_id,
+            func.count(PersonalJournal.id).label("entry_count"),
+        )
+        .group_by(PersonalJournal.patient_id)
+        .order_by(func.count(PersonalJournal.id).desc())
+        .first()
+    )
 
     most_documented_patient = None
     if patient_stats:
         patient = db.query(User).filter(User.id == patient_stats.patient_id).first()
-        most_documented_patient = f"{patient.first_name} {patient.last_name}" if patient else "Unknown"
+        most_documented_patient = (
+            f"{patient.first_name} {patient.last_name}" if patient else "Unknown"
+        )
 
     return PersonalJournalStats(
         total_entries=total_entries,
@@ -542,8 +592,7 @@ def transcribe_voice_recording(
     # Verify file exists and is accessible
     if not os.path.exists(file_path):
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Voice file not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Voice file not found"
         )
 
     try:
@@ -553,18 +602,18 @@ def transcribe_voice_recording(
         if transcription is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Failed to transcribe voice file. Please check the file format and try again."
+                detail="Failed to transcribe voice file. Please check the file format and try again.",
             )
 
         return VoiceTranscriptionResponse(
             transcription=transcription,
             confidence=confidence,
-            duration_seconds=duration
+            duration_seconds=duration,
         )
 
     except Exception as e:
         logger.error(f"Error transcribing voice file {file_path}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while transcribing the voice file"
+            detail="An error occurred while transcribing the voice file",
         )

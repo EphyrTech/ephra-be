@@ -3,10 +3,11 @@ from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user_from_auth
 from app.db.database import get_db
 from app.db.models import Journal, User
-from app.schemas.journal import Journal as JournalSchema, JournalCreate, JournalUpdate
-from app.api.deps import get_current_user
+from app.schemas.journal import Journal as JournalSchema
+from app.schemas.journal import JournalCreate, JournalUpdate
 
 router = APIRouter()
 
@@ -15,7 +16,7 @@ router = APIRouter()
 def get_journals(
     skip: int = 0,
     limit: int = 100,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -34,7 +35,7 @@ def get_journals(
 @router.post("/", response_model=JournalSchema, status_code=status.HTTP_201_CREATED)
 def create_journal(
     journal_in: JournalCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -53,7 +54,7 @@ def create_journal(
 @router.get("/{journal_id}", response_model=JournalSchema)
 def get_journal(
     journal_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -76,7 +77,7 @@ def get_journal(
 def update_journal(
     journal_id: str,
     journal_in: JournalUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -106,7 +107,7 @@ def update_journal(
 @router.delete("/{journal_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_journal(
     journal_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> None:
     """
@@ -124,4 +125,5 @@ def delete_journal(
         )
 
     db.delete(journal)
+    db.commit()
     db.commit()

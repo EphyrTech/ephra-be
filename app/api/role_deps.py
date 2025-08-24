@@ -1,10 +1,11 @@
 from typing import List
+
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user_from_auth
 from app.db.database import get_db
 from app.db.models import User, UserRole
-from app.core.auth_middleware import verify_access_token
 
 
 def require_roles(allowed_roles: List[UserRole]):
@@ -12,7 +13,7 @@ def require_roles(allowed_roles: List[UserRole]):
     Dependency factory that creates a dependency function to check if the current user has one of the allowed roles.
     """
 
-    def role_checker(current_user: User = Depends(verify_access_token)) -> User:
+    def role_checker(current_user: User = Depends(get_current_user_from_auth)) -> User:
         if current_user.role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -23,7 +24,7 @@ def require_roles(allowed_roles: List[UserRole]):
     return role_checker
 
 
-def require_admin(current_user: User = Depends(verify_access_token)) -> User:
+def require_admin(current_user: User = Depends(get_current_user_from_auth)) -> User:
     """
     Dependency to ensure the current user is an admin.
     """
@@ -34,7 +35,9 @@ def require_admin(current_user: User = Depends(verify_access_token)) -> User:
     return current_user
 
 
-def require_care_or_admin(current_user: User = Depends(verify_access_token)) -> User:
+def require_care_or_admin(
+    current_user: User = Depends(get_current_user_from_auth),
+) -> User:
     """
     Dependency to ensure the current user is either care provider or admin.
     """
@@ -47,9 +50,9 @@ def require_care_or_admin(current_user: User = Depends(verify_access_token)) -> 
 
 
 def get_care_providers(
-    specialty: str = None,
+    specialty: str | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(verify_access_token),
+    current_user: User = Depends(get_current_user_from_auth),
 ) -> List[User]:
     """
     Get list of care providers, optionally filtered by specialty.
@@ -67,7 +70,7 @@ def get_care_providers(
     )
 
     if specialty:
-        from app.db.models import SpecialistType, CareProviderProfile
+        from app.db.models import CareProviderProfile, SpecialistType
 
         try:
             specialty_enum = SpecialistType(specialty.upper())

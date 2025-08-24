@@ -3,18 +3,20 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user_from_auth
 from app.core.security import get_password_hash, verify_password
 from app.db.database import get_db
 from app.db.models import User
-from app.schemas.user import User as UserSchema, UserUpdate, AccountDeletion, EmailUpdate
-from app.api.deps import get_current_user
+from app.schemas.user import AccountDeletion, EmailUpdate
+from app.schemas.user import User as UserSchema
+from app.schemas.user import UserUpdate
 
 router = APIRouter()
 
 
 @router.get("/me", response_model=UserSchema)
 def get_current_user_info(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_auth),
 ) -> Any:
     """
     Get current user.
@@ -25,7 +27,7 @@ def get_current_user_info(
 @router.put("/me", response_model=UserSchema)
 def update_user(
     user_in: UserUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -71,15 +73,14 @@ def update_user(
 @router.get("/{user_id}", response_model=UserSchema)
 def get_user_by_id(
     user_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_auth),
 ) -> Any:
     """
     Get user by ID. Users can only access their own profile.
     """
     if user_id != current_user.id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions"
         )
     return current_user
 
@@ -88,7 +89,7 @@ def get_user_by_id(
 def update_user_by_id(
     user_id: str,
     user_in: UserUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -96,8 +97,7 @@ def update_user_by_id(
     """
     if user_id != current_user.id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions"
         )
 
     if user_in.password:
@@ -139,7 +139,7 @@ def update_user_by_id(
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_user(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> None:
     """
@@ -153,17 +153,18 @@ def deactivate_user(
 @router.post("/me/update-email", response_model=UserSchema)
 def update_user_email(
     email_data: EmailUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
     Update user email with password verification.
     """
     # Verify password
-    if not current_user.hashed_password or not verify_password(email_data.password, current_user.hashed_password):
+    if not current_user.hashed_password or not verify_password(
+        email_data.password, current_user.hashed_password
+    ):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect password"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password"
         )
 
     # Check if email is already in use
@@ -171,7 +172,7 @@ def update_user_email(
     if existing_user and existing_user.id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This email is already in use by another account"
+            detail="This email is already in use by another account",
         )
 
     # Update email
@@ -185,19 +186,21 @@ def update_user_email(
 @router.post("/me/delete", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_user_with_password(
     deletion_data: AccountDeletion,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> None:
     """
     Deactivate own user account with password verification (set is_active to False).
     """
     # Verify password
-    if not current_user.hashed_password or not verify_password(deletion_data.password, current_user.hashed_password):
+    if not current_user.hashed_password or not verify_password(
+        deletion_data.password, current_user.hashed_password
+    ):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect password"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password"
         )
 
     current_user.is_active = False
     db.add(current_user)
+    db.commit()
     db.commit()

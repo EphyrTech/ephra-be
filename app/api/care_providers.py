@@ -1,22 +1,22 @@
 """API endpoints for care provider management"""
 
 from typing import Any, List
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user_from_auth
+from app.api.role_deps import require_care_or_admin
 from app.db.database import get_db
-from app.db.models import User, UserRole, CareProviderProfile, Availability
+from app.db.models import Availability, CareProviderProfile, User, UserRole
+from app.schemas.care_provider import Availability as AvailabilitySchema
+from app.schemas.care_provider import AvailabilityCreate, AvailabilityUpdate
+from app.schemas.care_provider import CareProviderProfile as CareProviderProfileSchema
 from app.schemas.care_provider import (
-    CareProviderProfile as CareProviderProfileSchema,
     CareProviderProfileCreate,
     CareProviderProfileUpdate,
     CareProviderWithUser,
-    Availability as AvailabilitySchema,
-    AvailabilityCreate,
-    AvailabilityUpdate,
 )
-from app.api.deps import get_current_user
-from app.api.role_deps import require_care_or_admin
 from app.services.exceptions import ServiceException
 
 router = APIRouter()
@@ -28,25 +28,29 @@ def get_care_providers(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_auth),
 ) -> Any:
     """
     Get list of care providers, optionally filtered by specialty.
     """
-    query = db.query(CareProviderProfile).join(User).filter(
-        User.is_active == True,
-        CareProviderProfile.is_accepting_patients == True
+    query = (
+        db.query(CareProviderProfile)
+        .join(User)
+        .filter(
+            User.is_active == True, CareProviderProfile.is_accepting_patients == True
+        )
     )
 
     if specialty:
         from app.db.models import SpecialistType
+
         try:
             specialty_enum = SpecialistType(specialty.lower())
             query = query.filter(CareProviderProfile.specialty == specialty_enum)
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid specialty. Must be one of: {[s.value for s in SpecialistType]}"
+                detail=f"Invalid specialty. Must be one of: {[s.value for s in SpecialistType]}",
             )
 
     profiles = query.offset(skip).limit(limit).all()
@@ -77,23 +81,27 @@ def get_my_profile(
     if current_user.role != UserRole.CARE_PROVIDER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only care providers can access this endpoint"
+            detail="Only care providers can access this endpoint",
         )
 
-    profile = db.query(CareProviderProfile).filter(
-        CareProviderProfile.user_id == current_user.id
-    ).first()
+    profile = (
+        db.query(CareProviderProfile)
+        .filter(CareProviderProfile.user_id == current_user.id)
+        .first()
+    )
 
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Care provider profile not found"
+            detail="Care provider profile not found",
         )
 
     return profile
 
 
-@router.post("/me", response_model=CareProviderProfileSchema, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/me", response_model=CareProviderProfileSchema, status_code=status.HTTP_201_CREATED
+)
 def create_my_profile(
     profile_in: CareProviderProfileCreate,
     current_user: User = Depends(require_care_or_admin),
@@ -105,18 +113,20 @@ def create_my_profile(
     if current_user.role != UserRole.CARE_PROVIDER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only care providers can create profiles"
+            detail="Only care providers can create profiles",
         )
 
     # Check if profile already exists
-    existing_profile = db.query(CareProviderProfile).filter(
-        CareProviderProfile.user_id == current_user.id
-    ).first()
+    existing_profile = (
+        db.query(CareProviderProfile)
+        .filter(CareProviderProfile.user_id == current_user.id)
+        .first()
+    )
 
     if existing_profile:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Care provider profile already exists"
+            detail="Care provider profile already exists",
         )
 
     # Create profile
@@ -142,17 +152,19 @@ def update_my_profile(
     if current_user.role != UserRole.CARE_PROVIDER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only care providers can update profiles"
+            detail="Only care providers can update profiles",
         )
 
-    profile = db.query(CareProviderProfile).filter(
-        CareProviderProfile.user_id == current_user.id
-    ).first()
+    profile = (
+        db.query(CareProviderProfile)
+        .filter(CareProviderProfile.user_id == current_user.id)
+        .first()
+    )
 
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Care provider profile not found"
+            detail="Care provider profile not found",
         )
 
     # Update profile
@@ -170,20 +182,21 @@ def update_my_profile(
 def get_care_provider(
     care_provider_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_auth),
 ) -> Any:
     """
     Get a specific care provider by ID.
     """
-    profile = db.query(CareProviderProfile).join(User).filter(
-        CareProviderProfile.user_id == care_provider_id,
-        User.is_active == True
-    ).first()
+    profile = (
+        db.query(CareProviderProfile)
+        .join(User)
+        .filter(CareProviderProfile.user_id == care_provider_id, User.is_active == True)
+        .first()
+    )
 
     if not profile:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Care provider not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Care provider not found"
         )
 
     return {
@@ -197,6 +210,7 @@ def get_care_provider(
 
 # Availability management endpoints
 
+
 @router.get("/me/availability", response_model=List[AvailabilitySchema])
 def get_my_availability(
     current_user: User = Depends(require_care_or_admin),
@@ -208,29 +222,38 @@ def get_my_availability(
     if current_user.role != UserRole.CARE_PROVIDER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only care providers can access this endpoint"
+            detail="Only care providers can access this endpoint",
         )
 
     # Get care provider profile
-    profile = db.query(CareProviderProfile).filter(
-        CareProviderProfile.user_id == current_user.id
-    ).first()
+    profile = (
+        db.query(CareProviderProfile)
+        .filter(CareProviderProfile.user_id == current_user.id)
+        .first()
+    )
 
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Care provider profile not found"
+            detail="Care provider profile not found",
         )
 
     # Get availability slots
-    availabilities = db.query(Availability).filter(
-        Availability.care_provider_id == profile.id
-    ).order_by(Availability.start_time).all()
+    availabilities = (
+        db.query(Availability)
+        .filter(Availability.care_provider_id == profile.id)
+        .order_by(Availability.start_time)
+        .all()
+    )
 
     return availabilities
 
 
-@router.post("/me/availability", response_model=AvailabilitySchema, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/me/availability",
+    response_model=AvailabilitySchema,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_my_availability(
     availability_in: AvailabilityCreate,
     current_user: User = Depends(require_care_or_admin),
@@ -242,38 +265,44 @@ def create_my_availability(
     if current_user.role != UserRole.CARE_PROVIDER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only care providers can create availability"
+            detail="Only care providers can create availability",
         )
 
     # Get care provider profile
-    profile = db.query(CareProviderProfile).filter(
-        CareProviderProfile.user_id == current_user.id
-    ).first()
+    profile = (
+        db.query(CareProviderProfile)
+        .filter(CareProviderProfile.user_id == current_user.id)
+        .first()
+    )
 
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Care provider profile not found"
+            detail="Care provider profile not found",
         )
 
     # Validate time range
     if availability_in.start_time >= availability_in.end_time:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Start time must be before end time"
+            detail="Start time must be before end time",
         )
 
     # Check for overlapping availability slots
-    overlapping = db.query(Availability).filter(
-        Availability.care_provider_id == profile.id,
-        Availability.start_time < availability_in.end_time,
-        Availability.end_time > availability_in.start_time
-    ).first()
+    overlapping = (
+        db.query(Availability)
+        .filter(
+            Availability.care_provider_id == profile.id,
+            Availability.start_time < availability_in.end_time,
+            Availability.end_time > availability_in.start_time,
+        )
+        .first()
+    )
 
     if overlapping:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This time slot overlaps with an existing availability slot"
+            detail="This time slot overlaps with an existing availability slot",
         )
 
     # Create availability slot
@@ -300,58 +329,67 @@ def update_my_availability(
     if current_user.role != UserRole.CARE_PROVIDER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only care providers can update availability"
+            detail="Only care providers can update availability",
         )
 
     # Get care provider profile
-    profile = db.query(CareProviderProfile).filter(
-        CareProviderProfile.user_id == current_user.id
-    ).first()
+    profile = (
+        db.query(CareProviderProfile)
+        .filter(CareProviderProfile.user_id == current_user.id)
+        .first()
+    )
 
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Care provider profile not found"
+            detail="Care provider profile not found",
         )
 
     # Get availability slot
-    availability = db.query(Availability).filter(
-        Availability.id == availability_id,
-        Availability.care_provider_id == profile.id
-    ).first()
+    availability = (
+        db.query(Availability)
+        .filter(
+            Availability.id == availability_id,
+            Availability.care_provider_id == profile.id,
+        )
+        .first()
+    )
 
     if not availability:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Availability slot not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Availability slot not found"
         )
 
     # Update availability
     update_data = availability_in.model_dump(exclude_unset=True)
 
     # Validate time range if both times are being updated
-    start_time = update_data.get('start_time', availability.start_time)
-    end_time = update_data.get('end_time', availability.end_time)
+    start_time = update_data.get("start_time", availability.start_time)
+    end_time = update_data.get("end_time", availability.end_time)
 
     if start_time >= end_time:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Start time must be before end time"
+            detail="Start time must be before end time",
         )
 
     # Check for overlapping availability slots (excluding current one)
-    if 'start_time' in update_data or 'end_time' in update_data:
-        overlapping = db.query(Availability).filter(
-            Availability.care_provider_id == profile.id,
-            Availability.id != availability_id,
-            Availability.start_time < end_time,
-            Availability.end_time > start_time
-        ).first()
+    if "start_time" in update_data or "end_time" in update_data:
+        overlapping = (
+            db.query(Availability)
+            .filter(
+                Availability.care_provider_id == profile.id,
+                Availability.id != availability_id,
+                Availability.start_time < end_time,
+                Availability.end_time > start_time,
+            )
+            .first()
+        )
 
         if overlapping:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This time slot overlaps with an existing availability slot"
+                detail="This time slot overlaps with an existing availability slot",
             )
 
     # Apply updates
@@ -364,7 +402,9 @@ def update_my_availability(
     return availability
 
 
-@router.delete("/me/availability/{availability_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/me/availability/{availability_id}", status_code=status.HTTP_204_NO_CONTENT
+)
 def delete_my_availability(
     availability_id: str,
     current_user: User = Depends(require_care_or_admin),
@@ -376,48 +416,61 @@ def delete_my_availability(
     if current_user.role != UserRole.CARE_PROVIDER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only care providers can delete availability"
+            detail="Only care providers can delete availability",
         )
 
     # Get care provider profile
-    profile = db.query(CareProviderProfile).filter(
-        CareProviderProfile.user_id == current_user.id
-    ).first()
+    profile = (
+        db.query(CareProviderProfile)
+        .filter(CareProviderProfile.user_id == current_user.id)
+        .first()
+    )
 
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Care provider profile not found"
+            detail="Care provider profile not found",
         )
 
     # Get availability slot
-    availability = db.query(Availability).filter(
-        Availability.id == availability_id,
-        Availability.care_provider_id == profile.id
-    ).first()
+    availability = (
+        db.query(Availability)
+        .filter(
+            Availability.id == availability_id,
+            Availability.care_provider_id == profile.id,
+        )
+        .first()
+    )
 
     if not availability:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Availability slot not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Availability slot not found"
         )
 
     # Check if there are any appointments scheduled during this time
     from app.db.models import Appointment, AppointmentStatus
 
-    conflicting_appointments = db.query(Appointment).filter(
-        Appointment.care_provider_id == current_user.id,
-        Appointment.status.in_([AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED]),
-        Appointment.start_time < availability.end_time,
-        Appointment.end_time > availability.start_time
-    ).first()
+    conflicting_appointments = (
+        db.query(Appointment)
+        .filter(
+            Appointment.care_provider_id == current_user.id,
+            Appointment.status.in_(
+                [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED]
+            ),
+            Appointment.start_time < availability.end_time,
+            Appointment.end_time > availability.start_time,
+        )
+        .first()
+    )
 
     if conflicting_appointments:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot delete availability slot with scheduled appointments"
+            detail="Cannot delete availability slot with scheduled appointments",
         )
 
     # Delete availability slot
     db.delete(availability)
+    db.commit()
+    db.commit()
     db.commit()

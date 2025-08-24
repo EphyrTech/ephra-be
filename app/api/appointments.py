@@ -3,15 +3,13 @@ from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.db.database import get_db
-from app.db.models import User, UserRole, UserAssignment
-from app.schemas.appointment import (
-    Appointment as AppointmentSchema,
-    AppointmentCreate,
-    AppointmentUpdate,
-)
-from app.core.auth_middleware import verify_access_token
+from app.api.deps import get_current_user_from_auth
 from app.api.role_deps import require_care_or_admin
+from app.core.auth_middleware import verify_access_token
+from app.db.database import get_db
+from app.db.models import User, UserAssignment, UserRole
+from app.schemas.appointment import Appointment as AppointmentSchema
+from app.schemas.appointment import AppointmentCreate, AppointmentUpdate
 from app.services.appointment_service import AppointmentService
 from app.services.exceptions import ServiceException
 
@@ -73,7 +71,7 @@ def get_assigned_users(
 def get_appointments(
     skip: int = 0,
     limit: int = 100,
-    current_user: User = Depends(verify_access_token),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """

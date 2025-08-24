@@ -7,12 +7,13 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import create_access_token
+from app.core.auth_middleware import verify_access_token
 from app.db.database import get_db
 from app.db.models import User
 from app.schemas.auth import TokenPayload
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/token")
+
 
 def get_current_user(
     db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)

@@ -10,7 +10,7 @@ from app.schemas.appointment import (
     AppointmentCreate,
     AppointmentUpdate,
 )
-from app.api.deps import get_current_user
+from app.core.auth_middleware import verify_access_token
 from app.api.role_deps import require_care_or_admin
 from app.services.appointment_service import AppointmentService
 from app.services.exceptions import ServiceException
@@ -29,35 +29,41 @@ def get_assigned_users(
     """
     if current_user.role == UserRole.CARE_PROVIDER:
         # For care providers, return only users assigned to them
-        assignments = db.query(UserAssignment).filter(
-            UserAssignment.care_provider_id == current_user.id,
-            UserAssignment.is_active == True
-        ).all()
+        assignments = (
+            db.query(UserAssignment)
+            .filter(
+                UserAssignment.care_provider_id == current_user.id,
+                UserAssignment.is_active == True,
+            )
+            .all()
+        )
 
         user_ids = [assignment.user_id for assignment in assignments]
-        users = db.query(User).filter(
-            User.id.in_(user_ids),
-            User.is_active == True
-        ).all() if user_ids else []
+        users = (
+            db.query(User).filter(User.id.in_(user_ids), User.is_active == True).all()
+            if user_ids
+            else []
+        )
 
     elif current_user.role == UserRole.ADMIN:
         # Admins can see all active users
-        users = db.query(User).filter(
-            User.role == UserRole.USER,
-            User.is_active == True
-        ).all()
+        users = (
+            db.query(User)
+            .filter(User.role == UserRole.USER, User.is_active == True)
+            .all()
+        )
     else:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
         )
 
     return [
         {
             "id": user.id,
-            "name": user.name or f"{user.first_name or ''} {user.last_name or ''}".strip(),
+            "name": user.name
+            or f"{user.first_name or ''} {user.last_name or ''}".strip(),
             "email": user.email,
-            "role": user.role.value if user.role else "USER"
+            "role": user.role.value if user.role else "USER",
         }
         for user in users
     ]
@@ -67,7 +73,7 @@ def get_assigned_users(
 def get_appointments(
     skip: int = 0,
     limit: int = 100,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(verify_access_token),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -78,7 +84,9 @@ def get_appointments(
     """
     try:
         appointment_service = AppointmentService(db)
-        appointments = appointment_service.get_appointments_for_user(current_user, skip, limit)
+        appointments = appointment_service.get_appointments_for_user(
+            current_user, skip, limit
+        )
         return appointments
     except ServiceException as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
@@ -87,7 +95,7 @@ def get_appointments(
 @router.post("/", response_model=AppointmentSchema, status_code=status.HTTP_201_CREATED)
 def create_appointment(
     appointment_in: AppointmentCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(verify_access_token),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -98,7 +106,9 @@ def create_appointment(
     """
     try:
         appointment_service = AppointmentService(db)
-        appointment = appointment_service.create_appointment(appointment_in, current_user)
+        appointment = appointment_service.create_appointment(
+            appointment_in, current_user
+        )
         return appointment
     except ServiceException as e:
         # Map service exceptions to appropriate HTTP status codes
@@ -109,14 +119,16 @@ def create_appointment(
             "CONFLICT_ERROR": status.HTTP_409_CONFLICT,
             "BUSINESS_RULE_ERROR": status.HTTP_422_UNPROCESSABLE_ENTITY,
         }
-        status_code = status_map.get(e.error_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        status_code = status_map.get(
+            e.error_code, status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
         raise HTTPException(status_code=status_code, detail=e.message)
 
 
 @router.get("/{appointment_id}")
 def get_appointment(
     appointment_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(verify_access_token),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -124,10 +136,16 @@ def get_appointment(
     """
     try:
         appointment_service = AppointmentService(db)
-        appointment = appointment_service.get_appointment_with_details(appointment_id, current_user)
+        appointment = appointment_service.get_appointment_with_details(
+            appointment_id, current_user
+        )
         return appointment
     except ServiceException as e:
-        status_code = status.HTTP_404_NOT_FOUND if "not found" in e.message.lower() else status.HTTP_403_FORBIDDEN
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in e.message.lower()
+            else status.HTTP_403_FORBIDDEN
+        )
         raise HTTPException(status_code=status_code, detail=e.message)
 
 
@@ -135,7 +153,7 @@ def get_appointment(
 def update_appointment(
     appointment_id: str,
     appointment_in: AppointmentUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(verify_access_token),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -143,17 +161,23 @@ def update_appointment(
     """
     try:
         appointment_service = AppointmentService(db)
-        appointment = appointment_service.update_appointment(appointment_id, appointment_in, current_user)
+        appointment = appointment_service.update_appointment(
+            appointment_id, appointment_in, current_user
+        )
         return appointment
     except ServiceException as e:
-        status_code = status.HTTP_404_NOT_FOUND if "not found" in e.message.lower() else status.HTTP_403_FORBIDDEN
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in e.message.lower()
+            else status.HTTP_403_FORBIDDEN
+        )
         raise HTTPException(status_code=status_code, detail=e.message)
 
 
 @router.delete("/{appointment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def cancel_appointment(
     appointment_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(verify_access_token),
     db: Session = Depends(get_db),
 ) -> None:
     """
@@ -163,5 +187,9 @@ def cancel_appointment(
         appointment_service = AppointmentService(db)
         appointment_service.cancel_appointment(appointment_id, current_user)
     except ServiceException as e:
-        status_code = status.HTTP_404_NOT_FOUND if "not found" in e.message.lower() else status.HTTP_422_UNPROCESSABLE_ENTITY
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in e.message.lower()
+            else status.HTTP_422_UNPROCESSABLE_ENTITY
+        )
         raise HTTPException(status_code=status_code, detail=e.message)

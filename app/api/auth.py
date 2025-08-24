@@ -156,20 +156,29 @@ async def get_current_user(auth: AuthInfo = Depends(verify_access_token), db: Se
         if not user:
             # If user doesn't exist, create a new one
             # Extract user info from JWT payload if available
+
+            # Debug: Log all available claims from Logto JWT
+            logger.info(f"Creating new user from Logto JWT. Available claims: {vars(auth)}")
+
             raw_email = getattr(auth, 'email', None)
+            logger.info(f"Raw email from Logto: {raw_email}")
 
             # Handle Logto .local domain emails in development
             if raw_email and raw_email.endswith('@logto.local'):
                 # Convert .local emails to valid domain
                 username = raw_email.split('@')[0]
                 email = f"{username}@ephyrtech.com"
+                logger.info(f"Converted .local email: {raw_email} -> {email}")
             elif raw_email:
                 email = raw_email
+                logger.info(f"Using provided email: {email}")
             else:
                 # Fallback email if none provided
                 email = f"user_{auth.sub}@ephyrtech.com"
+                logger.warning(f"No email provided by Logto, using fallback: {email}")
 
             name = getattr(auth, 'name', None) or getattr(auth, 'given_name', None) or "Logto User"
+            logger.info(f"User name from Logto: {name}")
 
             user = User(
                 email=email,

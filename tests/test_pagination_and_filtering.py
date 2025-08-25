@@ -5,7 +5,7 @@ from fastapi import status
 def test_journal_pagination(authorized_client, multiple_journals, pagination_params):
     """Test pagination of journal entries"""
     response = authorized_client.get(
-        f"/journals?skip={pagination_params['skip']}&limit={pagination_params['limit']}"
+        f"/v1/journals?skip={pagination_params['skip']}&limit={pagination_params['limit']}"
     )
     assert response.status_code == status.HTTP_200_OK
     
@@ -23,7 +23,7 @@ def test_journal_pagination(authorized_client, multiple_journals, pagination_par
 def test_specialist_pagination(authorized_client, multiple_specialists, pagination_params):
     """Test pagination of specialists"""
     response = authorized_client.get(
-        f"/specialists?skip={pagination_params['skip']}&limit={pagination_params['limit']}"
+        f"/v1/care-providers?skip={pagination_params['skip']}&limit={pagination_params['limit']}"
     )
     assert response.status_code == status.HTTP_200_OK
     
@@ -41,7 +41,7 @@ def test_specialist_pagination(authorized_client, multiple_specialists, paginati
 def test_appointment_pagination(authorized_client, multiple_appointments, pagination_params):
     """Test pagination of appointments"""
     response = authorized_client.get(
-        f"/appointments?skip={pagination_params['skip']}&limit={pagination_params['limit']}"
+        f"/v1/appointments?skip={pagination_params['skip']}&limit={pagination_params['limit']}"
     )
     assert response.status_code == status.HTTP_200_OK
     
@@ -58,7 +58,7 @@ def test_appointment_pagination(authorized_client, multiple_appointments, pagina
 
 def test_journal_search(authorized_client, multiple_journals, search_query):
     """Test searching journal entries"""
-    response = authorized_client.get(f"/journals?search={search_query['query']}")
+    response = authorized_client.get(f"/v1/journals?search={search_query['query']}")
     assert response.status_code == status.HTTP_200_OK
     
     data = response.json()
@@ -81,7 +81,7 @@ def test_journal_search(authorized_client, multiple_journals, search_query):
 def test_specialist_filter_by_type(authorized_client, multiple_specialists):
     """Test filtering specialists by type"""
     # Test filtering by mental health specialists
-    response = authorized_client.get("/specialists?type=mental")
+    response = authorized_client.get("/v1/care-providers?type=mental")
     assert response.status_code == status.HTTP_200_OK
     
     data = response.json()
@@ -93,7 +93,7 @@ def test_specialist_filter_by_type(authorized_client, multiple_specialists):
         assert specialist["specialist_type"] == "mental"
     
     # Test filtering by physical health specialists
-    response = authorized_client.get("/specialists?type=physical")
+    response = authorized_client.get("/v1/care-providers?type=physical")
     assert response.status_code == status.HTTP_200_OK
     
     data = response.json()
@@ -108,7 +108,7 @@ def test_specialist_filter_by_type(authorized_client, multiple_specialists):
 def test_appointment_filter_by_date_range(authorized_client, multiple_appointments, date_range):
     """Test filtering appointments by date range"""
     response = authorized_client.get(
-        f"/appointments?start_date={date_range['start_date']}&end_date={date_range['end_date']}"
+        f"/v1/appointments?start_date={date_range['start_date']}&end_date={date_range['end_date']}"
     )
     assert response.status_code == status.HTTP_200_OK
     
@@ -126,13 +126,13 @@ def test_appointment_filter_by_status(authorized_client, multiple_appointments):
     # First, update one appointment to be confirmed
     appointment_id = multiple_appointments[0].id
     response = authorized_client.put(
-        f"/appointments/{appointment_id}",
+        f"/v1/appointments/{appointment_id}",
         json={"status": "confirmed"}
     )
     assert response.status_code == status.HTTP_200_OK
     
     # Test filtering by pending status
-    response = authorized_client.get("/appointments?status=pending")
+    response = authorized_client.get("/v1/appointments?status=pending")
     assert response.status_code == status.HTTP_200_OK
     
     data = response.json()
@@ -144,7 +144,7 @@ def test_appointment_filter_by_status(authorized_client, multiple_appointments):
         assert appointment["status"] == "pending"
     
     # Test filtering by confirmed status
-    response = authorized_client.get("/appointments?status=confirmed")
+    response = authorized_client.get("/v1/appointments?status=confirmed")
     assert response.status_code == status.HTTP_200_OK
     
     data = response.json()

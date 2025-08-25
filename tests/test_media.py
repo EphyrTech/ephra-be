@@ -14,7 +14,7 @@ def test_upload_file(authorized_client, test_user, db, monkeypatch):
     
     # Test uploading a file
     response = authorized_client.post(
-        "/media/upload",
+        "/v1/media/upload",
         files={"file": ("test_file.txt", file, "text/plain")}
     )
     
@@ -44,7 +44,7 @@ def test_upload_file_too_large(authorized_client, monkeypatch):
     
     # Test uploading a file that's too large
     response = authorized_client.post(
-        "/media/upload",
+        "/v1/media/upload",
         files={"file": ("large_file.txt", file, "text/plain")}
     )
     
@@ -61,7 +61,7 @@ def test_upload_file_unauthorized(client):
     file = io.BytesIO(file_content)
     
     response = client.post(
-        "/media/upload",
+        "/v1/media/upload",
         files={"file": ("test_file.txt", file, "text/plain")}
     )
     
@@ -71,7 +71,7 @@ def test_upload_file_unauthorized(client):
 
 def test_upload_file_no_file(authorized_client):
     # Test uploading without a file
-    response = authorized_client.post("/media/upload")
+    response = authorized_client.post("/v1/media/upload")
     
     assert response.status_code == 422  # Validation error
     data = response.json()

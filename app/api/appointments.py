@@ -93,7 +93,7 @@ def get_appointments(
 @router.post("/", response_model=AppointmentSchema, status_code=status.HTTP_201_CREATED)
 def create_appointment(
     appointment_in: AppointmentCreate,
-    current_user: User = Depends(verify_access_token),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -126,7 +126,7 @@ def create_appointment(
 @router.get("/{appointment_id}")
 def get_appointment(
     appointment_id: str,
-    current_user: User = Depends(verify_access_token),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -151,7 +151,7 @@ def get_appointment(
 def update_appointment(
     appointment_id: str,
     appointment_in: AppointmentUpdate,
-    current_user: User = Depends(verify_access_token),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -175,7 +175,7 @@ def update_appointment(
 @router.delete("/{appointment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def cancel_appointment(
     appointment_id: str,
-    current_user: User = Depends(verify_access_token),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> None:
     """

@@ -1,25 +1,38 @@
 import time
+
 import uvicorn
-from fastapi import FastAPI, Request, APIRouter, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.api import (
+    admin,
+    appointments,
+    assignments,
+    auth,
+    care_providers,
+    health,
+    journals,
+    media,
+    metrics,
+    personal_journals,
+    users,
+    websockets,
+)
 from app.core.config import settings
-from app.core.logging import setup_logging
 from app.core.error_handlers import (
+    database_exception_handler,
+    general_exception_handler,
+    http_exception_handler,
     service_exception_handler,
     validation_exception_handler,
-    http_exception_handler,
-    database_exception_handler,
-    general_exception_handler
 )
+from app.core.logging import setup_logging
+from app.middleware import CacheMiddleware, RateLimiter
 from app.services.exceptions import ServiceException
-from app.middleware import RateLimiter, CacheMiddleware
-from app.api import auth, users, journals, media, appointments, specialists, admin, care_providers, assignments, personal_journals
-from app.api import health, metrics, websockets
 
 # Setup logging
 logger = setup_logging()
@@ -52,50 +65,41 @@ app = FastAPI(
     openapi_tags=[
         {
             "name": "Authentication",
-            "description": "Operations for user authentication and authorization"
+            "description": "Operations for user authentication and authorization",
         },
         {
             "name": "Users",
-            "description": "Operations with user profiles and account management"
+            "description": "Operations with user profiles and account management",
         },
         {
             "name": "Journals",
-            "description": "Journal entry creation, retrieval, and management"
+            "description": "Journal entry creation, retrieval, and management",
         },
         {
             "name": "Appointments",
-            "description": "Appointment scheduling and management with specialists"
+            "description": "Appointment scheduling and management with specialists",
         },
         {
             "name": "Specialists",
-            "description": "Specialist information, profiles, and availability"
+            "description": "Specialist information, profiles, and availability",
         },
         {
             "name": "Admin",
-            "description": "Administrative functions for user and role management"
+            "description": "Administrative functions for user and role management",
         },
         {
             "name": "Personal Journals",
-            "description": "Personal journal entries created by care providers and admins for patients"
+            "description": "Personal journal entries created by care providers and admins for patients",
         },
         {
             "name": "Assignments",
-            "description": "User-care provider assignment management"
+            "description": "User-care provider assignment management",
         },
-        {
-            "name": "Media",
-            "description": "Media file uploads and management"
-        },
-        {
-            "name": "Health",
-            "description": "API health check endpoints"
-        },
-        {
-            "name": "Monitoring",
-            "description": "Monitoring and metrics endpoints"
-        }
+        {"name": "Media", "description": "Media file uploads and management"},
+        {"name": "Health", "description": "API health check endpoints"},
+        {"name": "Monitoring", "description": "Monitoring and metrics endpoints"},
     ],
-    swagger_ui_parameters={"defaultModelsExpandDepth": -1}
+    swagger_ui_parameters={"defaultModelsExpandDepth": -1},
 )
 
 # Log CORS configuration for debugging
@@ -113,20 +117,21 @@ app.add_middleware(
     max_age=600,  # Cache preflight requests for 10 minutes
 )
 
+
 # Middleware to block documentation endpoints in production
 @app.middleware("http")
 async def block_docs_in_production(request: Request, call_next):
     if settings.ENVIRONMENT == "production":
         # Block access to documentation endpoints in production
         if request.url.path in ["/docs", "/redoc", "/openapi.json"]:
-            logger.warning(f"🔒 Blocked access to documentation endpoint: {request.url.path}")
-            raise HTTPException(
-                status_code=404,
-                detail="Not Found"
+            logger.warning(
+                f"🔒 Blocked access to documentation endpoint: {request.url.path}"
             )
+            raise HTTPException(status_code=404, detail="Not Found")
 
     response = await call_next(request)
     return response
+
 
 # Log documentation access status
 if settings.ENVIRONMENT == "production":
@@ -150,6 +155,7 @@ app.add_exception_handler(HTTPException, http_exception_handler)
 app.add_exception_handler(SQLAlchemyError, database_exception_handler)
 app.add_exception_handler(Exception, general_exception_handler)
 
+
 # Logging middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -158,10 +164,13 @@ async def log_requests(request: Request, call_next):
     process_time = time.time() - start_time
 
     # Log request details
-    logger.info(f"{request.method} {request.url.path} {response.status_code} "
-          f"Completed in {process_time:.4f}s")
+    logger.info(
+        f"{request.method} {request.url.path} {response.status_code} "
+        f"Completed in {process_time:.4f}s"
+    )
 
     return response
+
 
 # API versioning
 v1_router = APIRouter(prefix="/v1")
@@ -171,11 +180,18 @@ v1_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 v1_router.include_router(users.router, prefix="/users", tags=["Users"])
 v1_router.include_router(journals.router, prefix="/journals", tags=["Journals"])
 v1_router.include_router(media.router, prefix="/media", tags=["Media"])
-v1_router.include_router(appointments.router, prefix="/appointments", tags=["Appointments"])
-v1_router.include_router(specialists.router, prefix="/specialists", tags=["Specialists"])
-v1_router.include_router(care_providers.router, prefix="/care-providers", tags=["Care Providers"])
-v1_router.include_router(assignments.router, prefix="/assignments", tags=["Assignments"])
-v1_router.include_router(personal_journals.router, prefix="/personal-journals", tags=["Personal Journals"])
+v1_router.include_router(
+    appointments.router, prefix="/appointments", tags=["Appointments"]
+)
+v1_router.include_router(
+    care_providers.router, prefix="/care-providers", tags=["Care Providers"]
+)
+v1_router.include_router(
+    assignments.router, prefix="/assignments", tags=["Assignments"]
+)
+v1_router.include_router(
+    personal_journals.router, prefix="/personal-journals", tags=["Personal Journals"]
+)
 v1_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 v1_router.include_router(health.router, tags=["Health"])
 v1_router.include_router(metrics.router, tags=["Monitoring"])
@@ -188,11 +204,32 @@ app.include_router(v1_router)
 try:
     app.mount("/static", StaticFiles(directory="static"), name="static")
 except Exception as e:
-    logger.warning(f"Static directory not found, skipping static files mounting: {str(e)}")
+    logger.warning(
+        f"Static directory not found, skipping static files mounting: {str(e)}"
+    )
+
 
 @app.get("/")
 async def root():
     return {"message": "Welcome to Mental Health API"}
+
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+# Mount static files
+try:
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+except Exception as e:
+    logger.warning(
+        f"Static directory not found, skipping static files mounting: {str(e)}"
+    )
+
+
+@app.get("/")
+async def root():
+    return {"message": "Welcome to Mental Health API"}
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

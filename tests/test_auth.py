@@ -1,16 +1,17 @@
 import pytest
+
 from app.core.security import verify_password
 
 
 def test_register_user(client):
     # Test user registration
     response = client.post(
-        "/auth/register",
+        "/v1/auth/register",
         json={
             "email": "newuser@example.com",
             "name": "New User",
-            "password": "password123"
-        }
+            "password": "password123",
+        },
     )
     assert response.status_code == 201
     data = response.json()
@@ -22,25 +23,25 @@ def test_register_user(client):
 def test_register_existing_user(client, test_user):
     # Test registering with an existing email
     response = client.post(
-        "/auth/register",
+        "/v1/auth/register",
         json={
             "email": "test@example.com",  # Same as test_user
             "name": "Another User",
-            "password": "password123"
-        }
+            "password": "password123",
+        },
     )
     assert response.status_code == 400
-    assert "already exists" in response.json()["detail"].lower()
+    response_data = response.json()
+    error_message = response_data.get(
+        "detail", response_data.get("error", {}).get("message", "")
+    )
+    assert "already exists" in error_message.lower()
 
 
 def test_login_success(client, test_user):
     # Test successful login
     response = client.post(
-        "/auth/login",
-        json={
-            "email": "test@example.com",
-            "password": "testpassword"
-        }
+        "/v1/auth/login", json={"email": "test@example.com", "password": "testpassword"}
     )
     assert response.status_code == 200
     data = response.json()
@@ -51,37 +52,34 @@ def test_login_success(client, test_user):
 def test_login_wrong_password(client, test_user):
     # Test login with wrong password
     response = client.post(
-        "/auth/login",
-        json={
-            "email": "test@example.com",
-            "password": "wrongpassword"
-        }
+        "/v1/auth/login",
+        json={"email": "test@example.com", "password": "wrongpassword"},
     )
     assert response.status_code == 401
-    assert "incorrect email or password" in response.json()["detail"].lower()
+    response_data = response.json()
+    error_message = response_data.get(
+        "detail", response_data.get("error", {}).get("message", "")
+    )
+    assert "incorrect email or password" in error_message.lower()
 
 
 def test_login_nonexistent_user(client):
     # Test login with non-existent user
     response = client.post(
-        "/auth/login",
-        json={
-            "email": "nonexistent@example.com",
-            "password": "password123"
-        }
+        "/v1/auth/login",
+        json={"email": "nonexistent@example.com", "password": "password123"},
     )
     assert response.status_code == 401
-    assert "incorrect email or password" in response.json()["detail"].lower()
+    response_data = response.json()
+    error_message = response_data.get(
+        "detail", response_data.get("error", {}).get("message", "")
+    )
+    assert "incorrect email or password" in error_message.lower()
 
 
 def test_google_auth(client):
     # Test Google authentication (mock implementation)
-    response = client.post(
-        "/auth/google",
-        json={
-            "token": "mock_google_token"
-        }
-    )
+    response = client.post("/v1/auth/google", json={"token": "mock_google_token"})
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
@@ -91,10 +89,7 @@ def test_google_auth(client):
 def test_reset_password(client, test_user):
     # Test password reset request
     response = client.post(
-        "/auth/reset-password",
-        json={
-            "email": "test@example.com"
-        }
+        "/v1/auth/reset-password", json={"email": "test@example.com"}
     )
     assert response.status_code == 200
     assert "message" in response.json()
@@ -104,10 +99,7 @@ def test_reset_password(client, test_user):
 def test_reset_password_nonexistent_user(client):
     # Test password reset for non-existent user
     response = client.post(
-        "/auth/reset-password",
-        json={
-            "email": "nonexistent@example.com"
-        }
+        "/v1/auth/reset-password", json={"email": "nonexistent@example.com"}
     )
     assert response.status_code == 200
     # Should still return success to prevent user enumeration

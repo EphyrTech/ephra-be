@@ -1,18 +1,31 @@
-import os
 import io
+import os
+from datetime import datetime, timedelta, timezone
+
+# Set high rate limit for tests and disable cache
+os.environ["RATE_LIMIT_PER_MINUTE"] = "10000"
+os.environ["CACHE_TTL_SECONDS"] = "0"
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from datetime import datetime, timedelta
 
-from app.db.database import Base, get_db
-from app.db.models import User, Journal, Specialist, Appointment, MediaFile, Availability, UserRole, CareProviderProfile, SpecialistType
-from app.core.security import get_password_hash, create_access_token
 from app.core.config import settings
+from app.core.security import create_access_token, get_password_hash
+from app.db.database import Base, get_db
+from app.db.models import (
+    Appointment,
+    Availability,
+    CareProviderProfile,
+    Journal,
+    MediaFile,
+    SpecialistType,
+    User,
+    UserRole,
+)
 from main import app
-
 
 # Use in-memory SQLite for tests
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
@@ -80,13 +93,36 @@ def test_user_token(test_user):
 
 
 @pytest.fixture(scope="function")
-def authorized_client(client, test_user_token):
-    # Create a client with authorization headers
-    client.headers = {
-        **client.headers,
-        "Authorization": f"Bearer {test_user_token}"
-    }
-    return client
+def authorized_client(client, test_user):
+    # Override authentication dependencies to return the test user
+    from app.api.deps import get_current_user_from_auth
+    from app.core.auth_middleware import AuthInfo, verify_access_token
+
+    def override_verify_access_token():
+        return AuthInfo(
+            sub=test_user.logto_user_id or f"test-{test_user.id}",
+            aud=["test"],
+            iss="test",
+            exp=9999999999,
+            iat=1000000000,
+            scope="openid profile email",
+        )
+
+    def override_get_current_user_from_auth():
+        return test_user
+
+    app.dependency_overrides[verify_access_token] = override_verify_access_token
+    app.dependency_overrides[get_current_user_from_auth] = (
+        override_get_current_user_from_auth
+    )
+
+    yield client
+
+    # Clean up overrides
+    if verify_access_token in app.dependency_overrides:
+        del app.dependency_overrides[verify_access_token]
+    if get_current_user_from_auth in app.dependency_overrides:
+        del app.dependency_overrides[get_current_user_from_auth]
 
 
 @pytest.fixture(scope="function")
@@ -104,32 +140,67 @@ def test_journal(db, test_user):
 
 
 @pytest.fixture(scope="function")
-def test_specialist(db):
-    # Create a test specialist
-    specialist = Specialist(
-        name="Test Specialist",
-        email="specialist@example.com",
-        specialist_type="mental",
-        bio="Test specialist bio",
-        hourly_rate=10000,  # $100.00
+def test_care_provider(db):
+    # Create a test care provider user and profile
+    hashed_password = get_password_hash("testpassword")
+    user = User(
+        email="careprovider@example.com",
+        name="Test Care Provider",
+        first_name="Test",
+        last_name="Provider",
+        hashed_password=hashed_password,
+        role=UserRole.CARE_PROVIDER,
+        is_active=True,
     )
-    db.add(specialist)
+    db.add(user)
     db.commit()
-    db.refresh(specialist)
-    return specialist
+    db.refresh(user)
+
+    # Create care provider profile
+    profile = CareProviderProfile(
+        user_id=user.id,
+        specialty=SpecialistType.MENTAL,
+        bio="Test care provider bio",
+        hourly_rate=10000,  # $100.00
+        license_number="TEST123",
+        years_experience=5,
+        education="Test University",
+        certifications="Test Certification",
+        is_accepting_patients=True,
+    )
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+
+    return user, profile
 
 
 @pytest.fixture(scope="function")
-def test_availability(db, test_specialist):
-    # Create test availability for the specialist
-    now = datetime.now(tz=datetime.timezone.utc)
+def test_specialist(test_care_provider):
+    """Alias for test_care_provider for backward compatibility - returns just the profile"""
+    user, profile = test_care_provider
+    return profile
+
+
+@pytest.fixture(scope="function")
+def multiple_specialists(multiple_care_providers):
+    """Alias for multiple_care_providers for backward compatibility"""
+    return multiple_care_providers
+
+
+@pytest.fixture(scope="function")
+def test_availability(db, test_care_provider):
+    # Create test availability for the care provider
+    user, profile = test_care_provider
+    now = datetime.now(tz=timezone.utc)
     start_time = now + timedelta(days=1)
     end_time = start_time + timedelta(hours=2)
 
     availability = Availability(
-        specialist_id=test_specialist.id,
+        care_provider_id=profile.id,
         start_time=start_time,
         end_time=end_time,
+        is_available=True,
     )
     db.add(availability)
     db.commit()
@@ -138,15 +209,16 @@ def test_availability(db, test_specialist):
 
 
 @pytest.fixture(scope="function")
-def test_appointment(db, test_user, test_specialist):
+def test_appointment(db, test_user, test_care_provider):
     # Create a test appointment
-    now = datetime.now(tz=datetime.timezone.utc)
+    care_provider_user, profile = test_care_provider
+    now = datetime.now(tz=timezone.utc)
     start_time = now + timedelta(days=1)
     end_time = start_time + timedelta(hours=1)
 
     appointment = Appointment(
         user_id=test_user.id,
-        specialist_id=test_specialist.id,
+        care_provider_id=care_provider_user.id,
         start_time=start_time,
         end_time=end_time,
         status="pending",
@@ -196,13 +268,36 @@ def admin_token(admin_user):
 
 
 @pytest.fixture(scope="function")
-def admin_client(client, admin_token):
-    # Create a client with admin authorization headers
-    client.headers = {
-        **client.headers,
-        "Authorization": f"Bearer {admin_token}"
-    }
-    return client
+def admin_client(client, admin_user):
+    # Override authentication dependencies to return the admin user
+    from app.api.deps import get_current_user_from_auth
+    from app.core.auth_middleware import AuthInfo, verify_access_token
+
+    def override_verify_access_token():
+        return AuthInfo(
+            sub=admin_user.logto_user_id or f"admin-{admin_user.id}",
+            aud=["test"],
+            iss="test",
+            exp=9999999999,
+            iat=1000000000,
+            scope="openid profile email",
+        )
+
+    def override_get_current_user_from_auth():
+        return admin_user
+
+    app.dependency_overrides[verify_access_token] = override_verify_access_token
+    app.dependency_overrides[get_current_user_from_auth] = (
+        override_get_current_user_from_auth
+    )
+
+    yield client
+
+    # Clean up overrides
+    if verify_access_token in app.dependency_overrides:
+        del app.dependency_overrides[verify_access_token]
+    if get_current_user_from_auth in app.dependency_overrides:
+        del app.dependency_overrides[get_current_user_from_auth]
 
 
 @pytest.fixture(scope="function")
@@ -232,7 +327,7 @@ def care_provider_user(db):
         years_experience=5,
         education="Test University",
         certifications="Test Certification",
-        is_accepting_patients=True
+        is_accepting_patients=True,
     )
     db.add(profile)
     db.commit()
@@ -248,13 +343,36 @@ def care_provider_token(care_provider_user):
 
 
 @pytest.fixture(scope="function")
-def care_provider_client(client, care_provider_token):
-    # Create a client with care provider authorization headers
-    client.headers = {
-        **client.headers,
-        "Authorization": f"Bearer {care_provider_token}"
-    }
-    return client
+def care_provider_client(client, care_provider_user):
+    # Override authentication dependencies to return the care provider user
+    from app.api.deps import get_current_user_from_auth
+    from app.core.auth_middleware import AuthInfo, verify_access_token
+
+    def override_verify_access_token():
+        return AuthInfo(
+            sub=care_provider_user.logto_user_id or f"care-{care_provider_user.id}",
+            aud=["test"],
+            iss="test",
+            exp=9999999999,
+            iat=1000000000,
+            scope="openid profile email",
+        )
+
+    def override_get_current_user_from_auth():
+        return care_provider_user
+
+    app.dependency_overrides[verify_access_token] = override_verify_access_token
+    app.dependency_overrides[get_current_user_from_auth] = (
+        override_get_current_user_from_auth
+    )
+
+    yield client
+
+    # Clean up overrides
+    if verify_access_token in app.dependency_overrides:
+        del app.dependency_overrides[verify_access_token]
+    if get_current_user_from_auth in app.dependency_overrides:
+        del app.dependency_overrides[get_current_user_from_auth]
 
 
 @pytest.fixture(scope="function")
@@ -301,26 +419,30 @@ def mock_file():
         "file": file,
         "size": len(file_content),
         "filename": "test_file.txt",
-        "content_type": "text/plain"
+        "content_type": "text/plain",
     }
 
 
-@pytest.fixture(params=[
-    {"skip": 0, "limit": 5},
-    {"skip": 5, "limit": 5},
-    {"skip": 0, "limit": 10},
-    {"skip": 10, "limit": 10},
-])
+@pytest.fixture(
+    params=[
+        {"skip": 0, "limit": 5},
+        {"skip": 5, "limit": 5},
+        {"skip": 0, "limit": 10},
+        {"skip": 10, "limit": 10},
+    ]
+)
 def pagination_params(request):
     # Parameterized fixture for testing pagination
     return request.param
 
 
-@pytest.fixture(params=[
-    {"query": "test"},
-    {"query": "journal"},
-    {"query": "nonexistent"},
-])
+@pytest.fixture(
+    params=[
+        {"query": "test"},
+        {"query": "journal"},
+        {"query": "nonexistent"},
+    ]
+)
 def search_query(request):
     # Parameterized fixture for testing search functionality
     return request.param
@@ -351,7 +473,9 @@ def mock_google_auth(monkeypatch):
 
     # You would need to patch the actual function that verifies Google tokens
     # This is a placeholder - adjust the path to match your actual implementation
-    monkeypatch.setattr("app.api.auth.verify_google_token", mock_verify_token, raising=False)
+    monkeypatch.setattr(
+        "app.api.auth.verify_google_token", mock_verify_token, raising=False
+    )
 
 
 @pytest.fixture(scope="function")
@@ -360,11 +484,13 @@ def mock_email_service(monkeypatch):
     sent_emails = []
 
     def mock_send_email(to_email, subject, body):
-        sent_emails.append({
-            "to": to_email,
-            "subject": subject,
-            "body": body,
-        })
+        sent_emails.append(
+            {
+                "to": to_email,
+                "subject": subject,
+                "body": body,
+            }
+        )
         return True
 
     # You would need to patch the actual function that sends emails
@@ -399,41 +525,62 @@ def force_db_error(db, monkeypatch):
 
 
 @pytest.fixture(scope="function")
-def multiple_specialists(db):
-    # Create multiple specialists for testing
-    specialists = []
-    specialist_types = ["mental", "physical"]
+def multiple_care_providers(db):
+    # Create multiple care providers for testing
+    care_providers = []
+    specialist_types = [SpecialistType.MENTAL, SpecialistType.PHYSICAL]
 
     for i in range(10):
-        specialist = Specialist(
-            name=f"Specialist {i}",
-            email=f"specialist{i}@example.com",
-            specialist_type=specialist_types[i % 2],
-            bio=f"Bio for specialist {i}",
-            hourly_rate=10000 + (i * 1000),  # Varying rates
+        # Create user
+        hashed_password = get_password_hash("testpassword")
+        user = User(
+            email=f"careprovider{i}@example.com",
+            name=f"Care Provider {i}",
+            first_name=f"Provider{i}",
+            last_name="Test",
+            hashed_password=hashed_password,
+            role=UserRole.CARE_PROVIDER,
+            is_active=True,
         )
-        db.add(specialist)
-        specialists.append(specialist)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        # Create profile
+        profile = CareProviderProfile(
+            user_id=user.id,
+            specialty=specialist_types[i % 2],
+            bio=f"Bio for care provider {i}",
+            hourly_rate=10000 + (i * 1000),  # Varying rates
+            license_number=f"LIC{i}",
+            years_experience=i + 1,
+            education="Test University",
+            certifications="Test Certification",
+            is_accepting_patients=True,
+        )
+        db.add(profile)
+        care_providers.append((user, profile))
 
     db.commit()
-    for specialist in specialists:
-        db.refresh(specialist)
-    return specialists
+    for user, profile in care_providers:
+        db.refresh(profile)
+    return care_providers
 
 
 @pytest.fixture(scope="function")
-def multiple_appointments(db, test_user, test_specialist):
+def multiple_appointments(db, test_user, test_care_provider):
     # Create multiple appointments for testing
+    care_provider_user, _ = test_care_provider
     appointments = []
     now = datetime.now(tz=datetime.timezone.utc)
 
     for i in range(5):
-        start_time = now + timedelta(days=i+1)
+        start_time = now + timedelta(days=i + 1)
         end_time = start_time + timedelta(hours=1)
 
         appointment = Appointment(
             user_id=test_user.id,
-            specialist_id=test_specialist.id,
+            care_provider_id=care_provider_user.id,
             start_time=start_time,
             end_time=end_time,
             status="pending",

@@ -3,12 +3,12 @@ import pytest
 
 def test_get_specialists(authorized_client, test_specialist):
     # Test getting all specialists
-    response = authorized_client.get("/specialists")
+    response = authorized_client.get("/v1/care-providers")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
     assert len(data) >= 1
-    assert data[0]["id"] == test_specialist.id
+    assert data[0]["id"] == test_specialist.user_id
     assert data[0]["name"] == test_specialist.name
     assert data[0]["email"] == test_specialist.email
     assert data[0]["specialist_type"] == test_specialist.specialist_type
@@ -18,17 +18,17 @@ def test_get_specialists(authorized_client, test_specialist):
 
 def test_get_specialists_unauthorized(client):
     # Test getting specialists without authentication
-    response = client.get("/specialists")
+    response = client.get("/v1/care-providers")
     assert response.status_code == 401
     assert "not authenticated" in response.json()["detail"].lower()
 
 
 def test_get_specialist(authorized_client, test_specialist):
     # Test getting a specific specialist
-    response = authorized_client.get(f"/specialists/{test_specialist.id}")
+    response = authorized_client.get(f"/v1/care-providers/{test_specialist.user_id}")
     assert response.status_code == 200
     data = response.json()
-    assert data["id"] == test_specialist.id
+    assert data["id"] == test_specialist.user_id
     assert data["name"] == test_specialist.name
     assert data["email"] == test_specialist.email
     assert data["specialist_type"] == test_specialist.specialist_type
@@ -38,27 +38,27 @@ def test_get_specialist(authorized_client, test_specialist):
 
 def test_get_specialist_not_found(authorized_client):
     # Test getting a non-existent specialist
-    response = authorized_client.get("/specialists/nonexistent-id")
+    response = authorized_client.get("/v1/care-providers/nonexistent-id")
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
 
 
 def test_get_specialist_unauthorized(client, test_specialist):
     # Test getting a specialist without authentication
-    response = client.get(f"/specialists/{test_specialist.id}")
+    response = client.get(f"/v1/care-providers/{test_specialist.user_id}")
     assert response.status_code == 401
     assert "not authenticated" in response.json()["detail"].lower()
 
 
 def test_get_specialist_availability(authorized_client, test_specialist, test_availability):
     # Test getting a specialist's availability
-    response = authorized_client.get(f"/specialists/{test_specialist.id}/availability")
+    response = authorized_client.get(f"/v1/care-providers/{test_specialist.user_id}/availability")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
     assert len(data) >= 1
     assert data[0]["id"] == test_availability.id
-    assert data[0]["specialist_id"] == test_specialist.id
+    assert data[0]["care_provider_id"] == test_specialist.user_id
     # Check that start_time and end_time are included in the response
     assert "start_time" in data[0]
     assert "end_time" in data[0]
@@ -66,13 +66,13 @@ def test_get_specialist_availability(authorized_client, test_specialist, test_av
 
 def test_get_specialist_availability_not_found(authorized_client):
     # Test getting availability for a non-existent specialist
-    response = authorized_client.get("/specialists/nonexistent-id/availability")
+    response = authorized_client.get("/v1/care-providers/nonexistent-id/availability")
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
 
 
 def test_get_specialist_availability_unauthorized(client, test_specialist):
     # Test getting a specialist's availability without authentication
-    response = client.get(f"/specialists/{test_specialist.id}/availability")
+    response = client.get(f"/v1/care-providers/{test_specialist.user_id}/availability")
     assert response.status_code == 401
     assert "not authenticated" in response.json()["detail"].lower()

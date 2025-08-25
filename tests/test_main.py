@@ -26,17 +26,17 @@ def test_openapi_schema():
         response = client.get("/openapi.json")
         assert response.status_code == 200
         schema = response.json()
-        
+
         # Check basic structure of the schema
         assert "openapi" in schema
         assert "info" in schema
         assert "paths" in schema
-        
+
         # Check that our API endpoints are in the schema
-        assert "/auth/register" in schema["paths"]
-        assert "/auth/login" in schema["paths"]
-        assert "/users/me" in schema["paths"]
-        assert "/journals" in schema["paths"]
-        assert "/appointments" in schema["paths"]
-        assert "/specialists" in schema["paths"]
-        assert "/media/upload" in schema["paths"]
+        assert "/v1/auth/register" in schema["paths"]
+        assert "/v1/auth/login" in schema["paths"]
+        assert "/v1/users/me" in schema["paths"]
+        assert "/v1/journals/" in schema["paths"]
+        assert "/v1/appointments/" in schema["paths"]
+        assert "/v1/care-providers/" in schema["paths"]
+        assert "/v1/media/upload" in schema["paths"]

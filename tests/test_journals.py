@@ -3,7 +3,7 @@ import pytest
 
 def test_get_journals(authorized_client, test_journal):
     # Test getting all journals
-    response = authorized_client.get("/journals")
+    response = authorized_client.get("/v1/journals")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
@@ -15,7 +15,7 @@ def test_get_journals(authorized_client, test_journal):
 
 def test_get_journals_unauthorized(client):
     # Test getting journals without authentication
-    response = client.get("/journals")
+    response = client.get("/v1/journals")
     assert response.status_code == 401
     assert "not authenticated" in response.json()["detail"].lower()
 
@@ -23,7 +23,7 @@ def test_get_journals_unauthorized(client):
 def test_create_journal(authorized_client, test_user):
     # Test creating a new journal
     response = authorized_client.post(
-        "/journals",
+        "/v1/journals",
         json={
             "title": "New Journal",
             "content": "This is a new journal entry."
@@ -39,7 +39,7 @@ def test_create_journal(authorized_client, test_user):
 def test_create_journal_unauthorized(client):
     # Test creating a journal without authentication
     response = client.post(
-        "/journals",
+        "/v1/journals",
         json={
             "title": "New Journal",
             "content": "This is a new journal entry."
@@ -51,7 +51,7 @@ def test_create_journal_unauthorized(client):
 
 def test_get_journal(authorized_client, test_journal):
     # Test getting a specific journal
-    response = authorized_client.get(f"/journals/{test_journal.id}")
+    response = authorized_client.get(f"/v1/journals/{test_journal.id}")
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == test_journal.id
@@ -61,14 +61,14 @@ def test_get_journal(authorized_client, test_journal):
 
 def test_get_journal_not_found(authorized_client):
     # Test getting a non-existent journal
-    response = authorized_client.get("/journals/nonexistent-id")
+    response = authorized_client.get("/v1/journals/nonexistent-id")
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
 
 
 def test_get_journal_unauthorized(client, test_journal):
     # Test getting a journal without authentication
-    response = client.get(f"/journals/{test_journal.id}")
+    response = client.get(f"/v1/journals/{test_journal.id}")
     assert response.status_code == 401
     assert "not authenticated" in response.json()["detail"].lower()
 
@@ -76,7 +76,7 @@ def test_get_journal_unauthorized(client, test_journal):
 def test_update_journal(authorized_client, test_journal, db):
     # Test updating a journal
     response = authorized_client.put(
-        f"/journals/{test_journal.id}",
+        f"/v1/journals/{test_journal.id}",
         json={
             "title": "Updated Journal",
             "content": "This journal has been updated."
@@ -97,7 +97,7 @@ def test_update_journal(authorized_client, test_journal, db):
 def test_update_journal_partial(authorized_client, test_journal, db):
     # Test partial update of a journal
     response = authorized_client.put(
-        f"/journals/{test_journal.id}",
+        f"/v1/journals/{test_journal.id}",
         json={
             "title": "Partially Updated Journal"
         }
@@ -116,7 +116,7 @@ def test_update_journal_partial(authorized_client, test_journal, db):
 def test_update_journal_not_found(authorized_client):
     # Test updating a non-existent journal
     response = authorized_client.put(
-        "/journals/nonexistent-id",
+        "/v1/journals/nonexistent-id",
         json={
             "title": "Updated Journal"
         }
@@ -128,7 +128,7 @@ def test_update_journal_not_found(authorized_client):
 def test_update_journal_unauthorized(client, test_journal):
     # Test updating a journal without authentication
     response = client.put(
-        f"/journals/{test_journal.id}",
+        f"/v1/journals/{test_journal.id}",
         json={
             "title": "Updated Journal"
         }
@@ -139,7 +139,7 @@ def test_update_journal_unauthorized(client, test_journal):
 
 def test_delete_journal(authorized_client, test_journal, db):
     # Test deleting a journal
-    response = authorized_client.delete(f"/journals/{test_journal.id}")
+    response = authorized_client.delete(f"/v1/journals/{test_journal.id}")
     assert response.status_code == 204
     
     # Verify the journal was deleted from the database
@@ -149,13 +149,13 @@ def test_delete_journal(authorized_client, test_journal, db):
 
 def test_delete_journal_not_found(authorized_client):
     # Test deleting a non-existent journal
-    response = authorized_client.delete("/journals/nonexistent-id")
+    response = authorized_client.delete("/v1/journals/nonexistent-id")
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
 
 
 def test_delete_journal_unauthorized(client, test_journal):
     # Test deleting a journal without authentication
-    response = client.delete(f"/journals/{test_journal.id}")
+    response = client.delete(f"/v1/journals/{test_journal.id}")
     assert response.status_code == 401
     assert "not authenticated" in response.json()["detail"].lower()

@@ -16,7 +16,7 @@ from app.core.admin_auth import (AdminSession, admin_sessions,
                                  authenticate_superadmin, create_admin_session,
                                  get_admin_session, get_client_ip,
                                  get_user_agent, invalidate_admin_session,
-                                 log_admin_action, require_admin_session)
+                                 log_admin_action)
 from app.core.config import settings
 from app.db.database import get_db
 from app.db.models import (Appointment, AppointmentStatus, Availability,
@@ -30,6 +30,33 @@ templates = Jinja2Templates(directory="templates")
 
 # Router with uncommon path for security
 router = APIRouter(prefix="/admin-control-panel-x7k9m2", tags=["Admin Panel"])
+
+def get_admin_session_or_redirect(request: Request):
+    """Get admin session or return redirect response"""
+    try:
+        # Clean up expired sessions periodically
+        from app.core.admin_auth import cleanup_expired_sessions, get_admin_session, invalidate_admin_session
+        cleanup_expired_sessions()
+
+        # Get session ID from cookie
+        session_id = request.cookies.get("admin_session_id")
+        if not session_id:
+            return None
+
+        session = get_admin_session(session_id)
+        if not session:
+            return None
+
+        # Verify IP address for additional security
+        current_ip = get_client_ip(request)
+        if session.ip_address != current_ip:
+            logger.warning(f"Admin session IP mismatch - Session IP: {session.ip_address}, Current IP: {current_ip}")
+            invalidate_admin_session(session_id)
+            return None
+
+        return session
+    except Exception:
+        return None
 
 @router.get("/login", response_class=HTMLResponse)
 async def admin_login_page(request: Request, error: Optional[str] = None):
@@ -103,10 +130,14 @@ async def session_info(session: AdminSession = Depends(require_admin_session)):
 @router.get("/dashboard", response_class=HTMLResponse)
 async def admin_dashboard(
     request: Request,
-    session: AdminSession = Depends(require_admin_session),
     db: Session = Depends(get_db)
 ):
     """Admin dashboard with statistics and overview"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
     log_admin_action(session, "VIEW_DASHBOARD")
     
     # Get statistics
@@ -189,13 +220,17 @@ def get_dashboard_chart_data(db: Session) -> Dict[str, Any]:
 @router.get("/users", response_class=HTMLResponse)
 async def admin_users_list(
     request: Request,
-    session: AdminSession = Depends(require_admin_session),
     db: Session = Depends(get_db),
     page: int = 1,
     per_page: int = 20,
     search: Optional[str] = None
 ):
     """List all users with pagination and search"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
     log_admin_action(session, "VIEW_USERS", {"page": page, "search": search})
     
     query = db.query(User)
@@ -796,6 +831,20 @@ async def admin_toggle_availability(
 @router.post("/availability/{slot_id}/delete")
 async def admin_delete_availability(
     slot_id: str,
+    session: AdminSession = Depends(require_admin_session),
+    db: Session = Depends(get_db)
+):
+    """Delete availability slot"""
+    log_admin_action(session, "DELETE_AVAILABILITY", {"slot_id": slot_id})
+
+    slot = db.query(Availability).filter(Availability.id == slot_id).first()
+    if not slot:
+        return {"success": False, "message": "Availability slot not found"}
+
+    db.delete(slot)
+    db.commit()
+
+    return {"success": True, "message": "Availability slot deleted successfully"}
     session: AdminSession = Depends(require_admin_session),
     db: Session = Depends(get_db)
 ):

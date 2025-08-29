@@ -120,36 +120,61 @@ def cleanup_expired_sessions():
     for session_id in expired_sessions:
         del admin_sessions[session_id]
 
+class AdminAuthException(Exception):
+    """Custom exception for admin authentication that triggers redirect"""
+    pass
+
 def require_admin_session(request: Request) -> AdminSession:
     """Dependency to require valid admin session"""
     # Clean up expired sessions periodically
     cleanup_expired_sessions()
-    
+
     # Get session ID from cookie
     session_id = request.cookies.get("admin_session_id")
     if not session_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Admin authentication required"
-        )
-    
+        # Check if this is an HTML request (browser) vs API request
+        accept_header = request.headers.get("accept", "")
+        if "text/html" in accept_header:
+            # Trigger redirect for HTML requests
+            raise AdminAuthException("No session")
+        else:
+            # Return JSON error for API requests
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Admin authentication required"
+            )
+
     session = get_admin_session(session_id)
     if not session:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired admin session"
-        )
-    
+        # Check if this is an HTML request (browser) vs API request
+        accept_header = request.headers.get("accept", "")
+        if "text/html" in accept_header:
+            # Trigger redirect for HTML requests
+            raise AdminAuthException("Invalid session")
+        else:
+            # Return JSON error for API requests
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired admin session"
+            )
+
     # Verify IP address for additional security
     current_ip = get_client_ip(request)
     if session.ip_address != current_ip:
         logger.warning(f"Admin session IP mismatch - Session IP: {session.ip_address}, Current IP: {current_ip}")
         invalidate_admin_session(session_id)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Session security violation"
-        )
-    
+        # Check if this is an HTML request (browser) vs API request
+        accept_header = request.headers.get("accept", "")
+        if "text/html" in accept_header:
+            # Trigger redirect for HTML requests
+            raise AdminAuthException("IP mismatch")
+        else:
+            # Return JSON error for API requests
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session security violation"
+            )
+
     return session
 
 def log_admin_action(session: AdminSession, action: str, details: dict = None):

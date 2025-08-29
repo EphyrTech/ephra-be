@@ -351,6 +351,10 @@ async def admin_activate_user(
     db: Session = Depends(get_db)
 ):
     """Activate user"""
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+
     log_admin_action(session, "ACTIVATE_USER", {"user_id": user_id})
 
     user = db.query(User).filter(User.id == user_id).first()
@@ -369,6 +373,10 @@ async def admin_deactivate_user(
     db: Session = Depends(get_db)
 ):
     """Deactivate user"""
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+
     log_admin_action(session, "DEACTIVATE_USER", {"user_id": user_id})
 
     user = db.query(User).filter(User.id == user_id).first()
@@ -438,6 +446,11 @@ async def admin_appointments_list(
     per_page: int = 20
 ):
     """List all appointments"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
     log_admin_action(session, "VIEW_APPOINTMENTS", {"page": page})
 
     query = db.query(Appointment).options(
@@ -468,6 +481,11 @@ async def admin_care_providers_list(
     per_page: int = 20
 ):
     """List all care providers"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
     log_admin_action(session, "VIEW_CARE_PROVIDERS", {"page": page})
 
     query = db.query(User).filter(User.role == UserRole.CARE_PROVIDER).options(

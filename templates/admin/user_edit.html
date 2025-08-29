@@ -1,0 +1,218 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Edit User{% endblock %}
+{% block page_title %}Edit User: {{ user.full_name or user.email }}{% endblock %}
+
+{% block page_actions %}
+<div class="btn-group">
+    <a href="/admin-control-panel-x7k9m2/users" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Back to Users
+    </a>
+    <a href="/admin-control-panel-x7k9m2/users/{{ user.id }}" class="btn btn-info">
+        <i class="fas fa-eye"></i> View Details
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-primary">User Information</h6>
+            </div>
+            <div class="card-body">
+                <form id="editUserForm">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email Address *</label>
+                                <input type="email" class="form-control" id="email" name="email" 
+                                       value="{{ user.email }}" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="full_name" class="form-label">Full Name</label>
+                                <input type="text" class="form-control" id="full_name" name="full_name" 
+                                       value="{{ user.full_name or '' }}">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="role" class="form-label">Role *</label>
+                                <select class="form-select" id="role" name="role" required>
+                                    <option value="user" {% if user.role == 'user' %}selected{% endif %}>User</option>
+                                    <option value="care_provider" {% if user.role == 'care_provider' %}selected{% endif %}>Care Provider</option>
+                                    <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Admin</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="is_active" class="form-label">Status</label>
+                                <select class="form-select" id="is_active" name="is_active">
+                                    <option value="true" {% if user.is_active %}selected{% endif %}>Active</option>
+                                    <option value="false" {% if not user.is_active %}selected{% endif %}>Inactive</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">User ID</label>
+                                <input type="text" class="form-control" value="{{ user.id }}" readonly>
+                                <small class="form-text text-muted">This field cannot be changed</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Created</label>
+                                <input type="text" class="form-control" value="{{ user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else 'N/A' }}" readonly>
+                                <small class="form-text text-muted">This field cannot be changed</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Last Login</label>
+                                <input type="text" class="form-control" value="{{ user.last_login.strftime('%Y-%m-%d %H:%M') if user.last_login else 'Never' }}" readonly>
+                                <small class="form-text text-muted">This field cannot be changed</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Last Updated</label>
+                                <input type="text" class="form-control" value="{{ user.updated_at.strftime('%Y-%m-%d %H:%M') if user.updated_at else 'Never' }}" readonly>
+                                <small class="form-text text-muted">This field will be updated automatically</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr>
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Update User
+                            </button>
+                            <a href="/admin-control-panel-x7k9m2/users" class="btn btn-secondary">
+                                <i class="fas fa-times"></i> Cancel
+                            </a>
+                        </div>
+                        <div>
+                            <small class="text-muted">* Required fields</small>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- User Statistics Card -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-info">User Statistics</h6>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <h5 class="text-primary">{{ user.journals|length if user.journals else 0 }}</h5>
+                            <small class="text-muted">Journal Entries</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <h5 class="text-success">{{ user.appointments_as_patient|length if user.appointments_as_patient else 0 }}</h5>
+                            <small class="text-muted">Appointments</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <h5 class="text-info">{{ user.media_files|length if user.media_files else 0 }}</h5>
+                            <small class="text-muted">Media Files</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <h5 class="text-warning">{{ user.personal_journals|length if user.personal_journals else 0 }}</h5>
+                            <small class="text-muted">Personal Journals</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Success/Error Messages -->
+<div id="messageContainer" style="position: fixed; top: 20px; right: 20px; z-index: 1050;"></div>
+
+<script>
+document.getElementById('editUserForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const userData = {
+        email: formData.get('email'),
+        full_name: formData.get('full_name'),
+        role: formData.get('role'),
+        is_active: formData.get('is_active') === 'true'
+    };
+
+    try {
+        const response = await fetch('/admin-control-panel-x7k9m2/users/{{ user.id }}/edit', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify(userData)
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+            showMessage('User updated successfully!', 'success');
+            // Optionally redirect after a delay
+            setTimeout(() => {
+                window.location.href = '/admin-control-panel-x7k9m2/users';
+            }, 1500);
+        } else {
+            showMessage(result.message || 'Failed to update user', 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showMessage('An error occurred while updating the user', 'error');
+    }
+});
+
+function showMessage(message, type) {
+    const messageContainer = document.getElementById('messageContainer');
+    const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+    const icon = type === 'success' ? 'fas fa-check-circle' : 'fas fa-exclamation-triangle';
+    
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert ${alertClass} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        <i class="${icon}"></i> ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    messageContainer.appendChild(alertDiv);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
+    }, 5000);
+}
+</script>
+{% endblock %}

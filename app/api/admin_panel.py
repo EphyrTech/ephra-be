@@ -408,27 +408,3 @@ async def admin_appointments_list(
         "total": total,
         "total_pages": total_pages
     })
-
-# Error handler for admin panel
-@router.exception_handler(HTTPException)
-async def admin_exception_handler(request: Request, exc: HTTPException):
-    if exc.status_code == 401:
-        return RedirectResponse(url="/admin-control-panel-x7k9m2/login")
-
-    return templates.TemplateResponse("admin/error.html", {
-        "request": request,
-        "error_code": exc.status_code,
-        "error_message": exc.detail
-    }, status_code=exc.status_code)
-
-# Error handler for admin panel
-@router.exception_handler(HTTPException)
-async def admin_exception_handler(request: Request, exc: HTTPException):
-    if exc.status_code == 401:
-        return RedirectResponse(url="/admin-control-panel-x7k9m2/login")
-
-    return templates.TemplateResponse("admin/error.html", {
-        "request": request,
-        "error_code": exc.status_code,
-        "error_message": exc.detail
-    }, status_code=exc.status_code)

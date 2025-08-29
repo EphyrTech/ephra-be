@@ -1,0 +1,187 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Create Appointment{% endblock %}
+{% block page_title %}Create New Appointment{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-primary">Appointment Details</h6>
+                <a href="/admin-control-panel-x7k9m2/appointments" class="btn btn-secondary btn-sm">
+                    <i class="fas fa-arrow-left"></i> Back to Appointments
+                </a>
+            </div>
+            <div class="card-body">
+                {% if error %}
+                <div class="alert alert-danger" role="alert">
+                    {{ error }}
+                </div>
+                {% endif %}
+
+                <form method="post" action="/admin-control-panel-x7k9m2/appointments/create">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="user_id" class="form-label">Patient *</label>
+                                <select class="form-select" id="user_id" name="user_id" required>
+                                    <option value="">Select a patient...</option>
+                                    {% for user in users %}
+                                    <option value="{{ user.id }}">
+                                        {{ user.name or user.email }} ({{ user.email }})
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="care_provider_id" class="form-label">Care Provider *</label>
+                                <select class="form-select" id="care_provider_id" name="care_provider_id" required>
+                                    <option value="">Select a care provider...</option>
+                                    {% for provider in care_providers %}
+                                    <option value="{{ provider.id }}">
+                                        {{ provider.name or provider.email }} ({{ provider.email }})
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="date" class="form-label">Date *</label>
+                                <input type="date" class="form-control" id="date" name="date" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="start_time" class="form-label">Start Time *</label>
+                                <input type="time" class="form-control" id="start_time" name="start_time" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="end_time" class="form-label">End Time *</label>
+                                <input type="time" class="form-control" id="end_time" name="end_time" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="meeting_link" class="form-label">Meeting Link</label>
+                        <input type="url" class="form-control" id="meeting_link" name="meeting_link" 
+                               placeholder="https://meet.ephra.com/session-xyz (optional - will be auto-generated if empty)">
+                        <div class="form-text">Leave empty to auto-generate a meeting link</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="notes" class="form-label">Notes</label>
+                        <textarea class="form-control" id="notes" name="notes" rows="3" 
+                                  placeholder="Optional notes about the appointment..."></textarea>
+                    </div>
+
+                    <div class="d-flex justify-content-between">
+                        <a href="/admin-control-panel-x7k9m2/appointments" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Cancel
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-plus"></i> Create Appointment
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-info">Quick Tips</h6>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled">
+                    <li class="mb-2">
+                        <i class="fas fa-info-circle text-info"></i>
+                        <strong>Patient:</strong> Select the user who will attend the appointment
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-user-md text-success"></i>
+                        <strong>Care Provider:</strong> Select the therapist or counselor
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-clock text-warning"></i>
+                        <strong>Time:</strong> Ensure the time slot doesn't conflict with existing appointments
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-video text-primary"></i>
+                        <strong>Meeting Link:</strong> Will be auto-generated if not provided
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-check text-success"></i>
+                        <strong>Status:</strong> New appointments start as "Pending"
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-warning">Statistics</h6>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <div class="border-end">
+                            <h5 class="text-primary">{{ users|length }}</h5>
+                            <small class="text-muted">Active Patients</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <h5 class="text-success">{{ care_providers|length }}</h5>
+                        <small class="text-muted">Care Providers</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Set minimum date to today
+document.getElementById('date').min = new Date().toISOString().split('T')[0];
+
+// Auto-calculate end time when start time changes
+document.getElementById('start_time').addEventListener('change', function() {
+    const startTime = this.value;
+    if (startTime) {
+        const [hours, minutes] = startTime.split(':');
+        const startDate = new Date();
+        startDate.setHours(parseInt(hours), parseInt(minutes));
+        
+        // Add 1 hour by default
+        const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+        const endTime = endDate.toTimeString().slice(0, 5);
+        
+        document.getElementById('end_time').value = endTime;
+    }
+});
+
+// Form validation
+document.querySelector('form').addEventListener('submit', function(e) {
+    const startTime = document.getElementById('start_time').value;
+    const endTime = document.getElementById('end_time').value;
+    
+    if (startTime && endTime && startTime >= endTime) {
+        e.preventDefault();
+        alert('End time must be after start time');
+        return false;
+    }
+});
+</script>
+{% endblock %}

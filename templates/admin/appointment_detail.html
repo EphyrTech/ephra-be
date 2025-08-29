@@ -1,0 +1,271 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Appointment Details - {{ appointment.id }}{% endblock %}
+{% block page_title %}Appointment Details{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-primary">Appointment Information</h6>
+                <div>
+                    <a href="/admin-control-panel-x7k9m2/appointments" class="btn btn-secondary btn-sm">
+                        <i class="fas fa-arrow-left"></i> Back to Appointments
+                    </a>
+                    {% if appointment.status.value == 'pending' %}
+                    <button onclick="updateAppointmentStatus('{{ appointment.id }}', 'confirmed')" 
+                            class="btn btn-success btn-sm">
+                        <i class="fas fa-check"></i> Confirm
+                    </button>
+                    <button onclick="updateAppointmentStatus('{{ appointment.id }}', 'cancelled')" 
+                            class="btn btn-danger btn-sm">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    {% elif appointment.status.value == 'confirmed' %}
+                    <button onclick="updateAppointmentStatus('{{ appointment.id }}', 'completed')" 
+                            class="btn btn-primary btn-sm">
+                        <i class="fas fa-flag-checkered"></i> Mark Complete
+                    </button>
+                    {% endif %}
+                    <button onclick="deleteAppointment('{{ appointment.id }}')" 
+                            class="btn btn-outline-danger btn-sm">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-borderless">
+                            <tr>
+                                <td><strong>ID:</strong></td>
+                                <td><span class="text-muted">{{ appointment.id }}</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Date:</strong></td>
+                                <td>{{ appointment.start_time.strftime('%Y-%m-%d') }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Time:</strong></td>
+                                <td>{{ appointment.start_time.strftime('%H:%M') }} - {{ appointment.end_time.strftime('%H:%M') }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Duration:</strong></td>
+                                <td>
+                                    {% set duration = (appointment.end_time - appointment.start_time).total_seconds() / 60 %}
+                                    {{ duration|int }} minutes
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Status:</strong></td>
+                                <td>
+                                    {% if appointment.status.value == 'pending' %}
+                                        <span class="badge bg-warning">Pending</span>
+                                    {% elif appointment.status.value == 'confirmed' %}
+                                        <span class="badge bg-success">Confirmed</span>
+                                    {% elif appointment.status.value == 'cancelled' %}
+                                        <span class="badge bg-danger">Cancelled</span>
+                                    {% elif appointment.status.value == 'completed' %}
+                                        <span class="badge bg-primary">Completed</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ appointment.status.value.title() }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Meeting Link:</strong></td>
+                                <td>
+                                    {% if appointment.meeting_link %}
+                                        <a href="{{ appointment.meeting_link }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-video"></i> Join Meeting
+                                        </a>
+                                    {% else %}
+                                        <span class="text-muted">No meeting link</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-borderless">
+                            <tr>
+                                <td><strong>Created:</strong></td>
+                                <td>{{ appointment.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Updated:</strong></td>
+                                <td>
+                                    {% if appointment.updated_at %}
+                                        {{ appointment.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                                    {% else %}
+                                        Never
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% if appointment.notes %}
+                            <tr>
+                                <td><strong>Notes:</strong></td>
+                                <td>{{ appointment.notes }}</td>
+                            </tr>
+                            {% endif %}
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Patient Information -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-primary">Patient Information</h6>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-borderless">
+                            <tr>
+                                <td><strong>Name:</strong></td>
+                                <td>{{ appointment.user.name or 'N/A' }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Email:</strong></td>
+                                <td>{{ appointment.user.email }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Phone:</strong></td>
+                                <td>{{ appointment.user.phone_number or 'N/A' }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-borderless">
+                            <tr>
+                                <td><strong>User ID:</strong></td>
+                                <td><span class="text-muted">{{ appointment.user.id }}</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Role:</strong></td>
+                                <td>
+                                    <span class="badge bg-info">{{ appointment.user.role.value.title() }}</span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Actions:</strong></td>
+                                <td>
+                                    <a href="/admin-control-panel-x7k9m2/users/{{ appointment.user.id }}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-user"></i> View User
+                                    </a>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Care Provider Information -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-primary">Care Provider Information</h6>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-borderless">
+                            <tr>
+                                <td><strong>Name:</strong></td>
+                                <td>{{ appointment.care_provider.name or 'N/A' }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Email:</strong></td>
+                                <td>{{ appointment.care_provider.email }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Phone:</strong></td>
+                                <td>{{ appointment.care_provider.phone_number or 'N/A' }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-borderless">
+                            <tr>
+                                <td><strong>Provider ID:</strong></td>
+                                <td><span class="text-muted">{{ appointment.care_provider.id }}</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Role:</strong></td>
+                                <td>
+                                    <span class="badge bg-success">{{ appointment.care_provider.role.value.title() }}</span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Actions:</strong></td>
+                                <td>
+                                    <a href="/admin-control-panel-x7k9m2/users/{{ appointment.care_provider.id }}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-user-md"></i> View Provider
+                                    </a>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateAppointmentStatus(appointmentId, newStatus) {
+    const statusText = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
+    if (confirm(`Are you sure you want to mark this appointment as ${statusText}?`)) {
+        fetch(`/admin-control-panel-x7k9m2/appointments/${appointmentId}/status`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({status: newStatus})
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred');
+        });
+    }
+}
+
+function deleteAppointment(appointmentId) {
+    if (confirm('Are you sure you want to delete this appointment? This action cannot be undone.')) {
+        fetch(`/admin-control-panel-x7k9m2/appointments/${appointmentId}/delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.location.href = '/admin-control-panel-x7k9m2/appointments';
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred');
+        });
+    }
+}
+</script>
+{% endblock %}

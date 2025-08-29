@@ -21,7 +21,8 @@ from app.core.config import settings
 from app.db.database import get_db
 from app.db.models import (Appointment, AppointmentStatus, Availability,
                            CareProviderProfile, Journal, MediaFile,
-                           PersonalJournal, SpecialistType, User, UserRole)
+                           PersonalJournal, SpecialistType, User, UserRole,
+                           generate_uuid)
 
 logger = logging.getLogger(__name__)
 
@@ -311,6 +312,78 @@ async def admin_audit_log(
         "page": page,
         "per_page": per_page
     })
+
+# User CRUD endpoints - CREATE routes must come before parameterized routes
+@router.get("/users/create", response_class=HTMLResponse)
+async def admin_user_create_form(
+    request: Request,
+
+):
+    """Show user creation form"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
+    log_admin_action(session, "VIEW_USER_CREATE_FORM")
+    return templates.TemplateResponse("admin/user_create.html", {
+        "request": request,
+        "session": session
+    })
+
+@router.post("/users/create")
+async def admin_user_create(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Create a new user"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return {"success": False, "message": "Authentication required"}
+
+    try:
+        user_data = await request.json()
+        log_admin_action(session, "CREATE_USER", {"email": user_data.get("email")})
+
+        import uuid
+
+        from app.core.security import get_password_hash
+        from app.db.models import CareProviderProfile, SpecialistType
+
+        # Create user
+        new_user = User(
+            id=str(uuid.uuid4()),
+            email=user_data["email"],
+            hashed_password=get_password_hash(user_data["password"]),
+            first_name=user_data.get("first_name"),
+            last_name=user_data.get("last_name"),
+            name=user_data.get("display_name"),
+            phone_number=user_data.get("phone_number"),
+            role=UserRole(user_data.get("role", "user")),
+            is_active=user_data.get("is_active", True)
+        )
+        db.add(new_user)
+
+        # If care provider, create profile
+        if new_user.role == UserRole.CARE_PROVIDER:
+            care_profile = CareProviderProfile(
+                id=str(uuid.uuid4()),
+                user_id=new_user.id,
+                license_number=user_data.get("license_number"),
+                specialty=SpecialistType(user_data.get("specialty", "mental_health")),
+                hourly_rate=user_data.get("hourly_rate"),
+                bio=user_data.get("bio")
+            )
+            db.add(care_profile)
+
+        db.commit()
+
+        return {"success": True, "message": "User created successfully", "user_id": new_user.id}
+
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "message": f"Error creating user: {str(e)}"}
 
 @router.get("/users/{user_id}", response_class=HTMLResponse)
 async def admin_user_detail(
@@ -688,7 +761,120 @@ async def admin_availability_list(
         "total_pages": total_pages
     })
 
+@router.get("/appointments/create", response_class=HTMLResponse)
+async def admin_appointment_create_form(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Show appointment creation form"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
+    log_admin_action(session, "VIEW_APPOINTMENT_CREATE_FORM", {})
+
+    # Get all users and care providers for dropdowns
+    users = db.query(User).filter(User.role == UserRole.USER, User.is_active == True).order_by(User.name).all()
+    care_providers = db.query(User).filter(User.role == UserRole.CARE_PROVIDER, User.is_active == True).order_by(User.name).all()
+
+    return templates.TemplateResponse("admin/appointment_create.html", {
+        "request": request,
+        "session": session,
+        "users": users,
+        "care_providers": care_providers
+    })
+
+@router.post("/appointments/create")
+async def admin_appointment_create(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Create new appointment"""
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+
+    form_data = await request.form()
+
+    log_admin_action(session, "CREATE_APPOINTMENT", {
+        "user_id": form_data.get("user_id"),
+        "care_provider_id": form_data.get("care_provider_id")
+    })
+
+    try:
+        from datetime import datetime
+
+        # Parse form data
+        user_id = form_data.get("user_id")
+        care_provider_id = form_data.get("care_provider_id")
+        date = form_data.get("date")
+        start_time = form_data.get("start_time")
+        end_time = form_data.get("end_time")
+        meeting_link = form_data.get("meeting_link")
+        notes = form_data.get("notes")
+
+        # Combine date and time
+        start_datetime = datetime.fromisoformat(f"{date}T{start_time}")
+        end_datetime = datetime.fromisoformat(f"{date}T{end_time}")
+
+        # Create appointment
+        appointment = Appointment(
+            user_id=user_id,
+            care_provider_id=care_provider_id,
+            start_time=start_datetime,
+            end_time=end_datetime,
+            status=AppointmentStatus.PENDING,
+            meeting_link=meeting_link or f"https://meet.ephra.com/session-{generate_uuid()[:8]}",
+            notes=notes
+        )
+
+        db.add(appointment)
+        db.commit()
+        db.refresh(appointment)
+
+        return RedirectResponse(
+            url=f"/admin-control-panel-x7k9m2/appointments/{appointment.id}",
+            status_code=302
+        )
+
+    except Exception as e:
+        return templates.TemplateResponse("admin/appointment_create.html", {
+            "request": request,
+            "session": session,
+            "users": db.query(User).filter(User.role == UserRole.USER, User.is_active == True).order_by(User.name).all(),
+            "care_providers": db.query(User).filter(User.role == UserRole.CARE_PROVIDER, User.is_active == True).order_by(User.name).all(),
+            "error": f"Error creating appointment: {str(e)}"
+        })
+
 # Additional CRUD endpoints for actions called by the UI
+
+@router.get("/journals/{journal_id}", response_class=HTMLResponse)
+async def admin_journal_detail(
+    journal_id: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Show journal details"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
+    log_admin_action(session, "VIEW_JOURNAL_DETAIL", {"journal_id": journal_id})
+
+    journal = db.query(Journal).options(
+        joinedload(Journal.user)
+    ).filter(Journal.id == journal_id).first()
+
+    if not journal:
+        raise HTTPException(status_code=404, detail="Journal not found")
+
+    return templates.TemplateResponse("admin/journal_detail.html", {
+        "request": request,
+        "session": session,
+        "journal": journal
+    })
 
 @router.post("/journals/{journal_id}/delete")
 async def admin_delete_journal(
@@ -711,6 +897,34 @@ async def admin_delete_journal(
     db.commit()
 
     return {"success": True, "message": "Journal deleted successfully"}
+
+@router.get("/appointments/{appointment_id}", response_class=HTMLResponse)
+async def admin_appointment_detail(
+    appointment_id: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Show appointment details"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
+    log_admin_action(session, "VIEW_APPOINTMENT_DETAIL", {"appointment_id": appointment_id})
+
+    appointment = db.query(Appointment).options(
+        joinedload(Appointment.user),
+        joinedload(Appointment.care_provider)
+    ).filter(Appointment.id == appointment_id).first()
+
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    return templates.TemplateResponse("admin/appointment_detail.html", {
+        "request": request,
+        "session": session,
+        "appointment": appointment
+    })
 
 @router.post("/appointments/{appointment_id}/status")
 async def admin_update_appointment_status(
@@ -816,75 +1030,7 @@ async def admin_audit_log_live(
     recent_entries = get_recent_audit_entries(10)
     return {"entries": recent_entries}
 
-# Missing CRUD endpoints that templates are calling
-
-@router.get("/users/create", response_class=HTMLResponse)
-async def admin_user_create_form(
-    request: Request,
-    
-):
-    """Show user creation form"""
-    # Check authentication
-    session = get_admin_session_or_redirect(request)
-    if not session:
-        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
-    
-    log_admin_action(session, "VIEW_USER_CREATE_FORM")
-    return templates.TemplateResponse("admin/user_create.html", {
-        "request": request,
-        "session": session
-    })
-
-@router.post("/users/create")
-async def admin_user_create(
-    request: Request,
-    db: Session = Depends(get_db)
-):
-    """Create a new user"""
-    try:
-        user_data = await request.json()
-        log_admin_action(session, "CREATE_USER", {"email": user_data.get("email")})
-
-        import uuid
-
-        from app.core.security import get_password_hash
-        from app.db.models import CareProviderProfile, SpecialistType
-
-        # Create user
-        new_user = User(
-            id=str(uuid.uuid4()),
-            email=user_data["email"],
-            hashed_password=get_password_hash(user_data["password"]),
-            first_name=user_data.get("first_name"),
-            last_name=user_data.get("last_name"),
-            name=user_data.get("name"),
-            phone_number=user_data.get("phone_number"),
-            role=UserRole(user_data["role"]),
-            is_active=user_data.get("is_active", True)
-        )
-
-        db.add(new_user)
-        db.flush()  # Get the user ID
-
-        # Create care provider profile if needed
-        if user_data["role"] == "care_provider" and user_data.get("specialty"):
-            care_profile = CareProviderProfile(
-                id=str(uuid.uuid4()),
-                user_id=new_user.id,
-                specialty=SpecialistType(user_data["specialty"]),
-                bio=user_data.get("bio"),
-                hourly_rate=user_data.get("hourly_rate"),
-                license_number=user_data.get("license_number")
-            )
-            db.add(care_profile)
-
-        db.commit()
-
-        return {"success": True, "message": "User created successfully", "user_id": new_user.id}
-
-    except Exception as e:
-        db.rollback()
-        return {"success": False, "message": f"Error creating user: {str(e)}"}
+# Additional CRUD endpoints for other entities can be added here
 
 @router.get("/users/export")
 async def admin_users_export(

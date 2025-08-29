@@ -5,10 +5,13 @@
 
 {% block content %}
 <div class="card">
-    <div class="card-header">
+    <div class="card-header d-flex justify-content-between align-items-center">
         <h6 class="m-0 font-weight-bold text-primary">
             Appointments ({{ total }} total)
         </h6>
+        <a href="/admin-control-panel-x7k9m2/appointments/create" class="btn btn-primary btn-sm">
+            <i class="fas fa-plus"></i> Add Appointment
+        </a>
     </div>
     <div class="card-body">
         <div class="table-responsive">

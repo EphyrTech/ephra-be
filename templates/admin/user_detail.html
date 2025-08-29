@@ -1,0 +1,318 @@
+{% extends "admin/base.html" %}
+
+{% block title %}User Details - {{ user.email }}{% endblock %}
+{% block page_title %}User Details{% endblock %}
+
+{% block page_actions %}
+<div class="btn-group">
+    <a href="/admin-control-panel-x7k9m2/users" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Back to Users
+    </a>
+    <a href="/admin-control-panel-x7k9m2/users/{{ user.id }}/edit" class="btn btn-warning">
+        <i class="fas fa-edit"></i> Edit User
+    </a>
+    {% if user.is_active %}
+    <button onclick="toggleUserStatus('{{ user.id }}', false)" class="btn btn-outline-secondary">
+        <i class="fas fa-user-slash"></i> Deactivate
+    </button>
+    {% else %}
+    <button onclick="toggleUserStatus('{{ user.id }}', true)" class="btn btn-outline-success">
+        <i class="fas fa-user-check"></i> Activate
+    </button>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- User Information -->
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-primary">User Information</h6>
+            </div>
+            <div class="card-body">
+                <div class="text-center mb-3">
+                    <div class="avatar-placeholder bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center" style="width: 80px; height: 80px; font-size: 2rem;">
+                        {{ (user.name or user.email)[0].upper() }}
+                    </div>
+                </div>
+                
+                <table class="table table-borderless">
+                    <tr>
+                        <td><strong>ID:</strong></td>
+                        <td><small class="text-muted">{{ user.id }}</small></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Email:</strong></td>
+                        <td>{{ user.email }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Name:</strong></td>
+                        <td>{{ user.name or user.display_name or 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>First Name:</strong></td>
+                        <td>{{ user.first_name or 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Last Name:</strong></td>
+                        <td>{{ user.last_name or 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Phone:</strong></td>
+                        <td>{{ user.phone_number or 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Role:</strong></td>
+                        <td>
+                            {% if user.role.value == 'admin' %}
+                                <span class="badge bg-danger">{{ user.role.value.title() }}</span>
+                            {% elif user.role.value == 'care_provider' %}
+                                <span class="badge bg-info">Care Provider</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ user.role.value.title() }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Status:</strong></td>
+                        <td>
+                            {% if user.is_active %}
+                                <span class="badge bg-success">Active</span>
+                            {% else %}
+                                <span class="badge bg-warning">Inactive</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Logto ID:</strong></td>
+                        <td>
+                            {% if user.logto_user_id %}
+                                <small class="text-muted">{{ user.logto_user_id[:20] }}...</small>
+                            {% else %}
+                                <span class="text-muted">Not linked</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Created:</strong></td>
+                        <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Updated:</strong></td>
+                        <td>{{ user.updated_at.strftime('%Y-%m-%d %H:%M:%S') if user.updated_at else 'Never' }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Care Provider Profile (if applicable) -->
+        {% if user.role.value == 'care_provider' and user.care_provider_profile %}
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-info">Care Provider Profile</h6>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless">
+                    <tr>
+                        <td><strong>Specialty:</strong></td>
+                        <td>
+                            <span class="badge bg-info">{{ user.care_provider_profile.specialty.value.title() }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>License:</strong></td>
+                        <td>{{ user.care_provider_profile.license_number or 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Hourly Rate:</strong></td>
+                        <td>
+                            {% if user.care_provider_profile.hourly_rate %}
+                                ${{ (user.care_provider_profile.hourly_rate / 100)|round(2) }}/hour
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Bio:</strong></td>
+                        <td>{{ user.care_provider_profile.bio or 'N/A' }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- User Activity -->
+    <div class="col-lg-8">
+        <!-- Recent Journals -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-primary">Recent Journal Entries ({{ journals|length }})</h6>
+            </div>
+            <div class="card-body">
+                {% if journals %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Mood</th>
+                                <th>Date</th>
+                                <th>Shared</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for journal in journals %}
+                            <tr>
+                                <td>
+                                    <strong>{{ journal.title }}</strong>
+                                    {% if journal.content %}
+                                    <br><small class="text-muted">{{ journal.content[:50] }}{% if journal.content|length > 50 %}...{% endif %}</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if journal.mood %}
+                                        {% if journal.mood == 'rad' %}
+                                            <span class="badge bg-success">😄 Rad</span>
+                                        {% elif journal.mood == 'good' %}
+                                            <span class="badge bg-info">😊 Good</span>
+                                        {% elif journal.mood == 'meh' %}
+                                            <span class="badge bg-warning">😐 Meh</span>
+                                        {% elif journal.mood == 'bad' %}
+                                            <span class="badge bg-danger">😞 Bad</span>
+                                        {% elif journal.mood == 'awful' %}
+                                            <span class="badge bg-dark">😢 Awful</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">{{ journal.mood }}</span>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <small>{{ journal.date.strftime('%Y-%m-%d') if journal.date else journal.created_at.strftime('%Y-%m-%d') }}</small>
+                                </td>
+                                <td>
+                                    {% if journal.shared_with_coach %}
+                                        <span class="badge bg-success">Yes</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">No</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="/admin-control-panel-x7k9m2/journals/{{ journal.id }}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted">No journal entries found.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Appointments -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-primary">Recent Appointments ({{ appointments|length }})</h6>
+            </div>
+            <div class="card-body">
+                {% if appointments %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Date & Time</th>
+                                <th>Care Provider</th>
+                                <th>Status</th>
+                                <th>Meeting Link</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for appointment in appointments %}
+                            <tr>
+                                <td>
+                                    <strong>{{ appointment.start_time.strftime('%Y-%m-%d') }}</strong>
+                                    <br><small>{{ appointment.start_time.strftime('%H:%M') }} - {{ appointment.end_time.strftime('%H:%M') }}</small>
+                                </td>
+                                <td>
+                                    <strong>{{ appointment.care_provider.name or appointment.care_provider.email }}</strong>
+                                    <br><small class="text-muted">{{ appointment.care_provider.email }}</small>
+                                </td>
+                                <td>
+                                    {% if appointment.status == 'pending' %}
+                                        <span class="badge bg-warning">Pending</span>
+                                    {% elif appointment.status == 'confirmed' %}
+                                        <span class="badge bg-success">Confirmed</span>
+                                    {% elif appointment.status == 'cancelled' %}
+                                        <span class="badge bg-danger">Cancelled</span>
+                                    {% elif appointment.status == 'completed' %}
+                                        <span class="badge bg-primary">Completed</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ appointment.status.title() }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if appointment.meeting_link %}
+                                        <a href="{{ appointment.meeting_link }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-video"></i> Join
+                                        </a>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="/admin-control-panel-x7k9m2/appointments/{{ appointment.id }}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted">No appointments found.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleUserStatus(userId, activate) {
+    const action = activate ? 'activate' : 'deactivate';
+    if (confirm(`Are you sure you want to ${action} this user?`)) {
+        fetch(`/admin-control-panel-x7k9m2/users/${userId}/${action}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred');
+        });
+    }
+}
+</script>
+{% endblock %}

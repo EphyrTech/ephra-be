@@ -1,0 +1,164 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Care Providers Management{% endblock %}
+{% block page_title %}Care Providers Management{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h6 class="m-0 font-weight-bold text-primary">
+            Care Providers ({{ total }} total)
+        </h6>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Specialty</th>
+                        <th>License</th>
+                        <th>Rate</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for provider in care_providers %}
+                    <tr>
+                        <td>
+                            <small class="text-muted">{{ provider.id[:8] }}...</small>
+                        </td>
+                        <td>
+                            <strong>{{ provider.name or provider.display_name or 'N/A' }}</strong>
+                            <br><small class="text-muted">{{ provider.first_name }} {{ provider.last_name }}</small>
+                        </td>
+                        <td>{{ provider.email }}</td>
+                        <td>
+                            {% if provider.care_provider_profile and provider.care_provider_profile.specialty %}
+                                <span class="badge bg-info">{{ provider.care_provider_profile.specialty.value.title() }}</span>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if provider.care_provider_profile and provider.care_provider_profile.license_number %}
+                                <small>{{ provider.care_provider_profile.license_number }}</small>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if provider.care_provider_profile and provider.care_provider_profile.hourly_rate %}
+                                <span class="badge bg-success">${{ (provider.care_provider_profile.hourly_rate / 100)|round(2) }}/hr</span>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if provider.is_active %}
+                                <span class="badge bg-success">Active</span>
+                            {% else %}
+                                <span class="badge bg-warning">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small>{{ provider.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <a href="/admin-control-panel-x7k9m2/users/{{ provider.id }}" 
+                                   class="btn btn-outline-primary btn-action" title="View">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                {% if provider.is_active %}
+                                <button onclick="toggleUserStatus('{{ provider.id }}', false)" 
+                                        class="btn btn-outline-secondary btn-action" title="Deactivate">
+                                    <i class="fas fa-user-slash"></i>
+                                </button>
+                                {% else %}
+                                <button onclick="toggleUserStatus('{{ provider.id }}', true)" 
+                                        class="btn btn-outline-success btn-action" title="Activate">
+                                    <i class="fas fa-user-check"></i>
+                                </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if total_pages > 1 %}
+        <nav aria-label="Care providers pagination">
+            <ul class="pagination justify-content-center">
+                {% if page > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page - 1 }}">Previous</a>
+                </li>
+                {% endif %}
+
+                {% for p in range(1, total_pages + 1) %}
+                    {% if p == page %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ p }}</span>
+                    </li>
+                    {% elif p <= 3 or p >= total_pages - 2 or (p >= page - 2 and p <= page + 2) %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ p }}">{{ p }}</a>
+                    </li>
+                    {% elif p == 4 and page > 6 %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    {% elif p == total_pages - 3 and page < total_pages - 5 %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    {% endif %}
+                {% endfor %}
+
+                {% if page < total_pages %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page + 1 }}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleUserStatus(userId, activate) {
+    const action = activate ? 'activate' : 'deactivate';
+    if (confirm(`Are you sure you want to ${action} this care provider?`)) {
+        fetch(`/admin-control-panel-x7k9m2/users/${userId}/${action}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred');
+        });
+    }
+}
+</script>
+{% endblock %}

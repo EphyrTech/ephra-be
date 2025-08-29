@@ -1,0 +1,218 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Create User{% endblock %}
+{% block page_title %}Create New User{% endblock %}
+
+{% block page_actions %}
+<div class="btn-group">
+    <a href="/admin-control-panel-x7k9m2/users" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Back to Users
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-primary">User Information</h6>
+            </div>
+            <div class="card-body">
+                <form id="createUserForm" method="post" action="/admin-control-panel-x7k9m2/users/create">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email Address *</label>
+                                <input type="email" class="form-control" id="email" name="email" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="password" class="form-label">Password *</label>
+                                <input type="password" class="form-control" id="password" name="password" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="first_name" class="form-label">First Name</label>
+                                <input type="text" class="form-control" id="first_name" name="first_name">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="last_name" class="form-label">Last Name</label>
+                                <input type="text" class="form-control" id="last_name" name="last_name">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Display Name</label>
+                                <input type="text" class="form-control" id="name" name="name">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="phone_number" class="form-label">Phone Number</label>
+                                <input type="tel" class="form-control" id="phone_number" name="phone_number">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="role" class="form-label">Role *</label>
+                                <select class="form-select" id="role" name="role" required>
+                                    <option value="">Select Role</option>
+                                    <option value="user">User</option>
+                                    <option value="care_provider">Care Provider</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="is_active" class="form-label">Status</label>
+                                <select class="form-select" id="is_active" name="is_active">
+                                    <option value="true">Active</option>
+                                    <option value="false">Inactive</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Care Provider specific fields -->
+                    <div id="careProviderFields" style="display: none;">
+                        <hr>
+                        <h6 class="text-info">Care Provider Information</h6>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="specialty" class="form-label">Specialty</label>
+                                    <select class="form-select" id="specialty" name="specialty">
+                                        <option value="">Select Specialty</option>
+                                        <option value="therapist">Therapist</option>
+                                        <option value="psychiatrist">Psychiatrist</option>
+                                        <option value="counselor">Counselor</option>
+                                        <option value="psychologist">Psychologist</option>
+                                        <option value="social_worker">Social Worker</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="license_number" class="form-label">License Number</label>
+                                    <input type="text" class="form-control" id="license_number" name="license_number">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="hourly_rate" class="form-label">Hourly Rate ($)</label>
+                                    <input type="number" class="form-control" id="hourly_rate" name="hourly_rate" step="0.01" min="0">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="bio" class="form-label">Bio</label>
+                            <textarea class="form-control" id="bio" name="bio" rows="3"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <button type="button" class="btn btn-secondary me-md-2" onclick="window.history.back()">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="submitBtn">
+                            <i class="fas fa-plus"></i> Create User
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Show/hide care provider fields based on role selection
+document.getElementById('role').addEventListener('change', function() {
+    const careProviderFields = document.getElementById('careProviderFields');
+    const specialtyField = document.getElementById('specialty');
+    
+    if (this.value === 'care_provider') {
+        careProviderFields.style.display = 'block';
+        specialtyField.required = true;
+    } else {
+        careProviderFields.style.display = 'none';
+        specialtyField.required = false;
+    }
+});
+
+// Handle form submission
+document.getElementById('createUserForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const submitBtn = document.getElementById('submitBtn');
+    const originalText = submitBtn.innerHTML;
+    
+    // Show loading state
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+    submitBtn.disabled = true;
+    
+    // Collect form data
+    const formData = new FormData(this);
+    const userData = {};
+    
+    for (let [key, value] of formData.entries()) {
+        if (value !== '') {
+            userData[key] = value;
+        }
+    }
+    
+    // Convert hourly rate to cents if provided
+    if (userData.hourly_rate) {
+        userData.hourly_rate = Math.round(parseFloat(userData.hourly_rate) * 100);
+    }
+    
+    // Convert is_active to boolean
+    userData.is_active = userData.is_active === 'true';
+    
+    // Submit the form
+    fetch('/admin-control-panel-x7k9m2/users/create', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(userData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('User created successfully!');
+            window.location.href = '/admin-control-panel-x7k9m2/users/' + data.user_id;
+        } else {
+            alert('Error: ' + data.message);
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while creating the user');
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+    });
+});
+</script>
+{% endblock %}

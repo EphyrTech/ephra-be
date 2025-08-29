@@ -1,0 +1,164 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Media Files Management{% endblock %}
+{% block page_title %}Media Files Management{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h6 class="m-0 font-weight-bold text-primary">
+            Media Files ({{ total }} total)
+        </h6>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>Filename</th>
+                        <th>User</th>
+                        <th>Type</th>
+                        <th>Size</th>
+                        <th>Path</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for media in media_files %}
+                    <tr>
+                        <td>
+                            <small class="text-muted">{{ media.id[:8] }}...</small>
+                        </td>
+                        <td>
+                            <strong>{{ media.filename }}</strong>
+                        </td>
+                        <td>
+                            <strong>{{ media.user.name or media.user.email }}</strong>
+                            <br><small class="text-muted">{{ media.user.email }}</small>
+                        </td>
+                        <td>
+                            {% if media.file_type %}
+                                {% if 'image' in media.file_type %}
+                                    <span class="badge bg-info"><i class="fas fa-image"></i> Image</span>
+                                {% elif 'audio' in media.file_type %}
+                                    <span class="badge bg-warning"><i class="fas fa-volume-up"></i> Audio</span>
+                                {% elif 'video' in media.file_type %}
+                                    <span class="badge bg-danger"><i class="fas fa-video"></i> Video</span>
+                                {% elif 'pdf' in media.file_type %}
+                                    <span class="badge bg-success"><i class="fas fa-file-pdf"></i> PDF</span>
+                                {% else %}
+                                    <span class="badge bg-secondary"><i class="fas fa-file"></i> {{ media.file_type }}</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">Unknown</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if media.file_size %}
+                                {% if media.file_size < 1024 %}
+                                    {{ media.file_size }} B
+                                {% elif media.file_size < 1024 * 1024 %}
+                                    {{ (media.file_size / 1024)|round(1) }} KB
+                                {% elif media.file_size < 1024 * 1024 * 1024 %}
+                                    {{ (media.file_size / (1024 * 1024))|round(1) }} MB
+                                {% else %}
+                                    {{ (media.file_size / (1024 * 1024 * 1024))|round(1) }} GB
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ media.file_path }}</small>
+                        </td>
+                        <td>
+                            <small>{{ media.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <a href="/admin-control-panel-x7k9m2/media/{{ media.id }}" 
+                                   class="btn btn-outline-primary btn-action" title="View">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <button onclick="deleteMedia('{{ media.id }}', '{{ media.filename }}')" 
+                                        class="btn btn-outline-danger btn-action" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if total_pages > 1 %}
+        <nav aria-label="Media files pagination">
+            <ul class="pagination justify-content-center">
+                {% if page > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page - 1 }}">Previous</a>
+                </li>
+                {% endif %}
+
+                {% for p in range(1, total_pages + 1) %}
+                    {% if p == page %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ p }}</span>
+                    </li>
+                    {% elif p <= 3 or p >= total_pages - 2 or (p >= page - 2 and p <= page + 2) %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ p }}">{{ p }}</a>
+                    </li>
+                    {% elif p == 4 and page > 6 %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    {% elif p == total_pages - 3 and page < total_pages - 5 %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    {% endif %}
+                {% endfor %}
+
+                {% if page < total_pages %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page + 1 }}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function deleteMedia(mediaId, filename) {
+    if (confirm(`Are you sure you want to delete media file "${filename}"? This action cannot be undone.`)) {
+        fetch(`/admin-control-panel-x7k9m2/media/${mediaId}/delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred');
+        });
+    }
+}
+</script>
+{% endblock %}

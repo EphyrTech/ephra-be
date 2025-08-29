@@ -1,12 +1,12 @@
 """Admin panel authentication and session management"""
 
+import hashlib
 import logging
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
-import secrets
-import hashlib
 
-from fastapi import Request, HTTPException, status, Depends
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security.utils import get_authorization_scheme_param
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 # In-memory session store (in production, use Redis or database)
 admin_sessions = {}
+
+# In-memory audit log store (in production, use database or log aggregation)
+audit_log_entries = []
 
 class AdminSession:
     def __init__(self, session_id: str, username: str, ip_address: str, user_agent: str):
@@ -159,13 +162,34 @@ def log_admin_action(session: AdminSession, action: str, details: dict = None):
         "action": action,
         "session_id": session.session_id
     }
-    
+
     if details:
         log_data["details"] = details
-    
+
+    # Add to in-memory audit log
+    audit_log_entries.append(log_data)
+
+    # Keep only last 1000 entries to prevent memory issues
+    if len(audit_log_entries) > 1000:
+        audit_log_entries.pop(0)
+
     # Log to both application logger and a separate admin audit log
     logger.info(f"ADMIN_ACTION: {log_data}")
-    
+
     # You could also write to a separate audit log file or database table
     # audit_logger = logging.getLogger("admin_audit")
     # audit_logger.info(log_data)
+
+def get_audit_log_entries(page: int = 1, per_page: int = 50):
+    """Get paginated audit log entries"""
+    # Return entries in reverse chronological order (newest first)
+    reversed_entries = list(reversed(audit_log_entries))
+
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+
+    return reversed_entries[start_idx:end_idx]
+
+def get_recent_audit_entries(limit: int = 10):
+    """Get most recent audit entries for live monitoring"""
+    return list(reversed(audit_log_entries[-limit:]))

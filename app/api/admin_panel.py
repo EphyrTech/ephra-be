@@ -247,19 +247,11 @@ async def admin_audit_log(
 ):
     """Display audit log of admin actions"""
     log_admin_action(session, "VIEW_AUDIT_LOG", {"page": page})
-    
-    # In a real implementation, you would read from a log file or database
-    # For now, we'll show a placeholder
-    audit_entries = [
-        {
-            "timestamp": datetime.utcnow().isoformat(),
-            "admin_user": session.username,
-            "ip_address": session.ip_address,
-            "action": "VIEW_AUDIT_LOG",
-            "details": {"page": page}
-        }
-    ]
-    
+
+    # Get real audit entries from the in-memory audit log
+    from app.core.admin_auth import get_audit_log_entries
+    audit_entries = get_audit_log_entries(page, per_page)
+
     return templates.TemplateResponse("admin/audit_log.html", {
         "request": request,
         "session": session,
@@ -408,3 +400,413 @@ async def admin_appointments_list(
         "total": total,
         "total_pages": total_pages
     })
+
+@router.get("/care-providers", response_class=HTMLResponse)
+async def admin_care_providers_list(
+    request: Request,
+    session: AdminSession = Depends(require_admin_session),
+    db: Session = Depends(get_db),
+    page: int = 1,
+    per_page: int = 20
+):
+    """List all care providers"""
+    log_admin_action(session, "VIEW_CARE_PROVIDERS", {"page": page})
+
+    query = db.query(User).filter(User.role == UserRole.CARE_PROVIDER).options(
+        joinedload(User.care_provider_profile)
+    ).order_by(desc(User.created_at))
+
+    total = query.count()
+    care_providers = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    total_pages = (total + per_page - 1) // per_page
+
+    return templates.TemplateResponse("admin/care_providers_list.html", {
+        "request": request,
+        "session": session,
+        "care_providers": care_providers,
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "total_pages": total_pages
+    })
+
+@router.get("/media", response_class=HTMLResponse)
+async def admin_media_list(
+    request: Request,
+    session: AdminSession = Depends(require_admin_session),
+    db: Session = Depends(get_db),
+    page: int = 1,
+    per_page: int = 20
+):
+    """List all media files"""
+    log_admin_action(session, "VIEW_MEDIA", {"page": page})
+
+    query = db.query(MediaFile).options(joinedload(MediaFile.user)).order_by(desc(MediaFile.created_at))
+    total = query.count()
+    media_files = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    total_pages = (total + per_page - 1) // per_page
+
+    return templates.TemplateResponse("admin/media_list.html", {
+        "request": request,
+        "session": session,
+        "media_files": media_files,
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "total_pages": total_pages
+    })
+
+@router.get("/personal-journals", response_class=HTMLResponse)
+async def admin_personal_journals_list(
+    request: Request,
+    session: AdminSession = Depends(require_admin_session),
+    db: Session = Depends(get_db),
+    page: int = 1,
+    per_page: int = 20
+):
+    """List all personal journals"""
+    log_admin_action(session, "VIEW_PERSONAL_JOURNALS", {"page": page})
+
+    query = db.query(PersonalJournal).options(
+        joinedload(PersonalJournal.patient),
+        joinedload(PersonalJournal.author)
+    ).order_by(desc(PersonalJournal.created_at))
+
+    total = query.count()
+    personal_journals = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    total_pages = (total + per_page - 1) // per_page
+
+    return templates.TemplateResponse("admin/personal_journals_list.html", {
+        "request": request,
+        "session": session,
+        "personal_journals": personal_journals,
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "total_pages": total_pages
+    })
+
+@router.get("/availability", response_class=HTMLResponse)
+async def admin_availability_list(
+    request: Request,
+    session: AdminSession = Depends(require_admin_session),
+    db: Session = Depends(get_db),
+    page: int = 1,
+    per_page: int = 20
+):
+    """List all availability slots"""
+    log_admin_action(session, "VIEW_AVAILABILITY", {"page": page})
+
+    query = db.query(Availability).options(joinedload(Availability.care_provider)).order_by(desc(Availability.created_at))
+    total = query.count()
+    availability_slots = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    total_pages = (total + per_page - 1) // per_page
+
+    return templates.TemplateResponse("admin/availability_list.html", {
+        "request": request,
+        "session": session,
+        "availability_slots": availability_slots,
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "total_pages": total_pages
+    })
+
+# Additional CRUD endpoints for actions called by the UI
+
+@router.post("/journals/{journal_id}/delete")
+async def admin_delete_journal(
+    journal_id: str,
+    session: AdminSession = Depends(require_admin_session),
+    db: Session = Depends(get_db)
+):
+    """Delete journal entry"""
+    log_admin_action(session, "DELETE_JOURNAL", {"journal_id": journal_id})
+
+    journal = db.query(Journal).filter(Journal.id == journal_id).first()
+    if not journal:
+        return {"success": False, "message": "Journal not found"}
+
+    db.delete(journal)
+    db.commit()
+
+    return {"success": True, "message": "Journal deleted successfully"}
+
+@router.post("/appointments/{appointment_id}/status")
+async def admin_update_appointment_status(
+    appointment_id: str,
+    request: Request,
+    session: AdminSession = Depends(require_admin_session),
+    db: Session = Depends(get_db)
+):
+    """Update appointment status"""
+    body = await request.json()
+    new_status = body.get("status")
+
+    log_admin_action(session, "UPDATE_APPOINTMENT_STATUS", {
+        "appointment_id": appointment_id,
+        "new_status": new_status
+    })
+
+    appointment = db.query(Appointment).filter(Appointment.id == appointment_id).first()
+    if not appointment:
+        return {"success": False, "message": "Appointment not found"}
+
+    try:
+        # Update the status as string value
+        appointment.status = new_status
+        db.commit()
+        return {"success": True, "message": f"Appointment status updated to {new_status}"}
+    except Exception as e:
+        return {"success": False, "message": f"Error updating status: {str(e)}"}
+
+@router.post("/appointments/{appointment_id}/delete")
+async def admin_delete_appointment(
+    appointment_id: str,
+    session: AdminSession = Depends(require_admin_session),
+    db: Session = Depends(get_db)
+):
+    """Delete appointment"""
+    log_admin_action(session, "DELETE_APPOINTMENT", {"appointment_id": appointment_id})
+
+    appointment = db.query(Appointment).filter(Appointment.id == appointment_id).first()
+    if not appointment:
+        return {"success": False, "message": "Appointment not found"}
+
+    db.delete(appointment)
+    db.commit()
+
+    return {"success": True, "message": "Appointment deleted successfully"}
+
+@router.post("/sessions/{session_id}/terminate")
+async def admin_terminate_session(
+    session_id: str,
+    current_session: AdminSession = Depends(require_admin_session)
+):
+    """Terminate a specific admin session"""
+    log_admin_action(current_session, "TERMINATE_SESSION", {"terminated_session_id": session_id})
+
+    if invalidate_admin_session(session_id):
+        return {"success": True, "message": "Session terminated successfully"}
+    else:
+        return {"success": False, "message": "Session not found or already terminated"}
+
+@router.post("/sessions/terminate-others")
+async def admin_terminate_other_sessions(
+    current_session: AdminSession = Depends(require_admin_session)
+):
+    """Terminate all other admin sessions except current one"""
+    terminated_count = 0
+    sessions_to_terminate = []
+
+    for session_id, session in admin_sessions.items():
+        if session_id != current_session.session_id:
+            sessions_to_terminate.append(session_id)
+
+    for session_id in sessions_to_terminate:
+        if invalidate_admin_session(session_id):
+            terminated_count += 1
+
+    log_admin_action(current_session, "TERMINATE_OTHER_SESSIONS", {
+        "terminated_count": terminated_count
+    })
+
+    return {"success": True, "terminated_count": terminated_count}
+
+@router.get("/audit-log/live")
+async def admin_audit_log_live(
+    session: AdminSession = Depends(require_admin_session)
+):
+    """Get live audit log entries for real-time monitoring"""
+    from app.core.admin_auth import get_recent_audit_entries
+    recent_entries = get_recent_audit_entries(10)
+    return {"entries": recent_entries}
+
+# Missing CRUD endpoints that templates are calling
+
+@router.get("/users/create", response_class=HTMLResponse)
+async def admin_user_create_form(
+    request: Request,
+    session: AdminSession = Depends(require_admin_session)
+):
+    """Show user creation form"""
+    log_admin_action(session, "VIEW_USER_CREATE_FORM")
+    return templates.TemplateResponse("admin/user_create.html", {
+        "request": request,
+        "session": session
+    })
+
+@router.post("/users/create")
+async def admin_user_create(
+    request: Request,
+    session: AdminSession = Depends(require_admin_session),
+    db: Session = Depends(get_db)
+):
+    """Create a new user"""
+    try:
+        user_data = await request.json()
+        log_admin_action(session, "CREATE_USER", {"email": user_data.get("email")})
+
+        import uuid
+
+        from app.core.security import get_password_hash
+        from app.db.models import CareProviderProfile, SpecialistType
+
+        # Create user
+        new_user = User(
+            id=str(uuid.uuid4()),
+            email=user_data["email"],
+            hashed_password=get_password_hash(user_data["password"]),
+            first_name=user_data.get("first_name"),
+            last_name=user_data.get("last_name"),
+            name=user_data.get("name"),
+            phone_number=user_data.get("phone_number"),
+            role=UserRole(user_data["role"]),
+            is_active=user_data.get("is_active", True)
+        )
+
+        db.add(new_user)
+        db.flush()  # Get the user ID
+
+        # Create care provider profile if needed
+        if user_data["role"] == "care_provider" and user_data.get("specialty"):
+            care_profile = CareProviderProfile(
+                id=str(uuid.uuid4()),
+                user_id=new_user.id,
+                specialty=SpecialistType(user_data["specialty"]),
+                bio=user_data.get("bio"),
+                hourly_rate=user_data.get("hourly_rate"),
+                license_number=user_data.get("license_number")
+            )
+            db.add(care_profile)
+
+        db.commit()
+
+        return {"success": True, "message": "User created successfully", "user_id": new_user.id}
+
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "message": f"Error creating user: {str(e)}"}
+
+@router.get("/users/export")
+async def admin_users_export(
+    session: AdminSession = Depends(require_admin_session),
+    db: Session = Depends(get_db)
+):
+    """Export users data as CSV"""
+    log_admin_action(session, "EXPORT_USERS")
+
+    import csv
+    import io
+
+    from fastapi.responses import StreamingResponse
+
+    users = db.query(User).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write header
+    writer.writerow(['ID', 'Email', 'Name', 'Role', 'Active', 'Created'])
+
+    # Write data
+    for user in users:
+        writer.writerow([
+            user.id,
+            user.email,
+            user.name or user.display_name or '',
+            user.role.value,
+            user.is_active,
+            user.created_at.isoformat()
+        ])
+
+    output.seek(0)
+
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=users_export.csv"}
+    )
+
+@router.post("/media/{media_id}/delete")
+async def admin_delete_media(
+    media_id: str,
+    session: AdminSession = Depends(require_admin_session),
+    db: Session = Depends(get_db)
+):
+    """Delete media file"""
+    log_admin_action(session, "DELETE_MEDIA", {"media_id": media_id})
+
+    media = db.query(MediaFile).filter(MediaFile.id == media_id).first()
+    if not media:
+        return {"success": False, "message": "Media file not found"}
+
+    db.delete(media)
+    db.commit()
+
+    return {"success": True, "message": "Media file deleted successfully"}
+
+@router.post("/personal-journals/{journal_id}/delete")
+async def admin_delete_personal_journal(
+    journal_id: str,
+    session: AdminSession = Depends(require_admin_session),
+    db: Session = Depends(get_db)
+):
+    """Delete personal journal entry"""
+    log_admin_action(session, "DELETE_PERSONAL_JOURNAL", {"journal_id": journal_id})
+
+    journal = db.query(PersonalJournal).filter(PersonalJournal.id == journal_id).first()
+    if not journal:
+        return {"success": False, "message": "Personal journal not found"}
+
+    db.delete(journal)
+    db.commit()
+
+    return {"success": True, "message": "Personal journal deleted successfully"}
+
+@router.post("/availability/{slot_id}/toggle")
+async def admin_toggle_availability(
+    slot_id: str,
+    request: Request,
+    session: AdminSession = Depends(require_admin_session),
+    db: Session = Depends(get_db)
+):
+    """Toggle availability slot status"""
+    body = await request.json()
+    available = body.get("available", True)
+
+    log_admin_action(session, "TOGGLE_AVAILABILITY", {
+        "slot_id": slot_id,
+        "available": available
+    })
+
+    slot = db.query(Availability).filter(Availability.id == slot_id).first()
+    if not slot:
+        return {"success": False, "message": "Availability slot not found"}
+
+    slot.is_available = available
+    db.commit()
+
+    return {"success": True, "message": f"Availability slot {'enabled' if available else 'disabled'}"}
+
+@router.post("/availability/{slot_id}/delete")
+async def admin_delete_availability(
+    slot_id: str,
+    session: AdminSession = Depends(require_admin_session),
+    db: Session = Depends(get_db)
+):
+    """Delete availability slot"""
+    log_admin_action(session, "DELETE_AVAILABILITY", {"slot_id": slot_id})
+
+    slot = db.query(Availability).filter(Availability.id == slot_id).first()
+    if not slot:
+        return {"success": False, "message": "Availability slot not found"}
+
+    db.delete(slot)
+    db.commit()
+
+    return {"success": True, "message": "Availability slot deleted successfully"}

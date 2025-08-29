@@ -35,7 +35,9 @@ def get_admin_session_or_redirect(request: Request):
     """Get admin session or return redirect response"""
     try:
         # Clean up expired sessions periodically
-        from app.core.admin_auth import cleanup_expired_sessions, get_admin_session, invalidate_admin_session
+        from app.core.admin_auth import (cleanup_expired_sessions,
+                                         get_admin_session,
+                                         invalidate_admin_session)
         cleanup_expired_sessions()
 
         # Get session ID from cookie
@@ -845,10 +847,18 @@ async def admin_delete_availability(
     db.commit()
 
     return {"success": True, "message": "Availability slot deleted successfully"}
-    session: AdminSession = Depends(require_admin_session),
+
+@router.post("/availability/{slot_id}/delete")
+async def admin_delete_availability(
+    slot_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Delete availability slot"""
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+
     log_admin_action(session, "DELETE_AVAILABILITY", {"slot_id": slot_id})
 
     slot = db.query(Availability).filter(Availability.id == slot_id).first()

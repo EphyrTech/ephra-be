@@ -598,6 +598,10 @@ async def admin_delete_journal(
     db: Session = Depends(get_db)
 ):
     """Delete journal entry"""
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+
     log_admin_action(session, "DELETE_JOURNAL", {"journal_id": journal_id})
 
     journal = db.query(Journal).filter(Journal.id == journal_id).first()
@@ -616,6 +620,10 @@ async def admin_update_appointment_status(
     db: Session = Depends(get_db)
 ):
     """Update appointment status"""
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+
     body = await request.json()
     new_status = body.get("status")
 
@@ -643,6 +651,10 @@ async def admin_delete_appointment(
     db: Session = Depends(get_db)
 ):
     """Delete appointment"""
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+
     log_admin_action(session, "DELETE_APPOINTMENT", {"appointment_id": appointment_id})
 
     appointment = db.query(Appointment).filter(Appointment.id == appointment_id).first()
@@ -661,7 +673,11 @@ async def admin_terminate_session(
     request: Request
 ):
     """Terminate a specific admin session"""
-    log_admin_action(current_session, "TERMINATE_SESSION", {"terminated_session_id": session_id})
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+    
+    log_admin_action(session, "TERMINATE_SESSION", {"terminated_session_id": session_id})
 
     if invalidate_admin_session(session_id):
         return {"success": True, "message": "Session terminated successfully"}
@@ -678,14 +694,14 @@ async def admin_terminate_other_sessions(
     sessions_to_terminate = []
 
     for session_id, session in admin_sessions.items():
-        if session_id != current_session.session_id:
+        if session_id != session.session_id:
             sessions_to_terminate.append(session_id)
 
     for session_id in sessions_to_terminate:
         if invalidate_admin_session(session_id):
             terminated_count += 1
 
-    log_admin_action(current_session, "TERMINATE_OTHER_SESSIONS", {
+    log_admin_action(session, "TERMINATE_OTHER_SESSIONS", {
         "terminated_count": terminated_count
     })
 

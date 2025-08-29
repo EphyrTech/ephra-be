@@ -395,6 +395,10 @@ async def admin_delete_user(
     db: Session = Depends(get_db)
 ):
     """Delete user (soft delete by deactivating)"""
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+
     log_admin_action(session, "DELETE_USER", {"user_id": user_id})
 
     user = db.query(User).filter(User.id == user_id).first()
@@ -406,6 +410,86 @@ async def admin_delete_user(
     db.commit()
 
     return {"success": True, "message": "User deleted successfully"}
+
+@router.get("/users/{user_id}/edit", response_class=HTMLResponse)
+async def admin_user_edit_form(
+    request: Request,
+    user_id: str,
+    db: Session = Depends(get_db)
+):
+    """Show user edit form"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
+    log_admin_action(session, "VIEW_USER_EDIT_FORM", {"user_id": user_id})
+
+    # Get user
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return templates.TemplateResponse("admin/user_edit.html", {
+        "request": request,
+        "user": user,
+        "session": session
+    })
+
+@router.post("/users/{user_id}/edit")
+async def admin_user_edit(
+    request: Request,
+    user_id: str,
+    db: Session = Depends(get_db)
+):
+    """Update user"""
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+
+    # Get form data
+    body = await request.json()
+
+    log_admin_action(session, "EDIT_USER", {
+        "user_id": user_id,
+        "changes": body
+    })
+
+    # Get user
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Update user fields
+    if "full_name" in body:
+        user.full_name = body["full_name"]
+    if "email" in body:
+        # Check if email is already taken by another user
+        existing_user = db.query(User).filter(
+            User.email == body["email"],
+            User.id != user_id
+        ).first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Email already exists")
+        user.email = body["email"]
+    if "role" in body:
+        user.role = body["role"]
+    if "is_active" in body:
+        user.is_active = body["is_active"]
+
+    # Update timestamps
+    user.updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(user)
+
+    return {"success": True, "message": "User updated successfully", "user": {
+        "id": str(user.id),
+        "full_name": user.full_name,
+        "email": user.email,
+        "role": user.role,
+        "is_active": user.is_active
+    }}
 
 @router.get("/journals", response_class=HTMLResponse)
 async def admin_journals_list(
@@ -515,6 +599,11 @@ async def admin_media_list(
     per_page: int = 20
 ):
     """List all media files"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
     log_admin_action(session, "VIEW_MEDIA", {"page": page})
 
     query = db.query(MediaFile).options(joinedload(MediaFile.user)).order_by(desc(MediaFile.created_at))
@@ -541,6 +630,11 @@ async def admin_personal_journals_list(
     per_page: int = 20
 ):
     """List all personal journals"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
     log_admin_action(session, "VIEW_PERSONAL_JOURNALS", {"page": page})
 
     query = db.query(PersonalJournal).options(
@@ -571,6 +665,11 @@ async def admin_availability_list(
     per_page: int = 20
 ):
     """List all availability slots"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
     log_admin_action(session, "VIEW_AVAILABILITY", {"page": page})
 
     query = db.query(Availability).options(joinedload(Availability.care_provider)).order_by(desc(Availability.created_at))

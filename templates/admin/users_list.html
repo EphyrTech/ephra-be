@@ -1,0 +1,235 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Users Management{% endblock %}
+{% block page_title %}Users Management{% endblock %}
+
+{% block page_actions %}
+<div class="btn-group">
+    <a href="/admin-control-panel-x7k9m2/users/create" class="btn btn-primary">
+        <i class="fas fa-plus"></i> Add User
+    </a>
+    <button type="button" class="btn btn-outline-secondary" onclick="exportUsers()">
+        <i class="fas fa-download"></i> Export
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Search and Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-6">
+                <label for="search" class="form-label">Search Users</label>
+                <input type="text" class="form-control" id="search" name="search" 
+                       value="{{ search }}" placeholder="Search by name, email...">
+            </div>
+            <div class="col-md-3">
+                <label for="role" class="form-label">Role Filter</label>
+                <select class="form-select" id="role" name="role">
+                    <option value="">All Roles</option>
+                    <option value="user">User</option>
+                    <option value="care_provider">Care Provider</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">&nbsp;</label>
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-outline-primary">
+                        <i class="fas fa-search"></i> Search
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Users Table -->
+<div class="card">
+    <div class="card-header">
+        <h6 class="m-0 font-weight-bold text-primary">
+            Users ({{ total }} total)
+        </h6>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Last Login</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>
+                            <small class="text-muted">{{ user.id[:8] }}...</small>
+                        </td>
+                        <td>
+                            <div>
+                                <strong>{{ user.name or user.display_name or 'N/A' }}</strong>
+                                {% if user.first_name or user.last_name %}
+                                <br><small class="text-muted">{{ user.first_name }} {{ user.last_name }}</small>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td>{{ user.email }}</td>
+                        <td>
+                            {% if user.role.value == 'admin' %}
+                                <span class="badge bg-danger">{{ user.role.value.title() }}</span>
+                            {% elif user.role.value == 'care_provider' %}
+                                <span class="badge bg-info">Care Provider</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ user.role.value.title() }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if user.is_active %}
+                                <span class="badge bg-success">Active</span>
+                            {% else %}
+                                <span class="badge bg-warning">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small>{{ user.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ user.updated_at.strftime('%Y-%m-%d %H:%M') if user.updated_at else 'Never' }}</small>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <a href="/admin-control-panel-x7k9m2/users/{{ user.id }}" 
+                                   class="btn btn-outline-primary btn-action" title="View">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a href="/admin-control-panel-x7k9m2/users/{{ user.id }}/edit" 
+                                   class="btn btn-outline-warning btn-action" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                {% if user.is_active %}
+                                <button onclick="toggleUserStatus('{{ user.id }}', false)" 
+                                        class="btn btn-outline-secondary btn-action" title="Deactivate">
+                                    <i class="fas fa-user-slash"></i>
+                                </button>
+                                {% else %}
+                                <button onclick="toggleUserStatus('{{ user.id }}', true)" 
+                                        class="btn btn-outline-success btn-action" title="Activate">
+                                    <i class="fas fa-user-check"></i>
+                                </button>
+                                {% endif %}
+                                <button onclick="deleteUser('{{ user.id }}', '{{ user.email }}')" 
+                                        class="btn btn-outline-danger btn-action" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if total_pages > 1 %}
+        <nav aria-label="Users pagination">
+            <ul class="pagination justify-content-center">
+                {% if page > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page - 1 }}{% if search %}&search={{ search }}{% endif %}">Previous</a>
+                </li>
+                {% endif %}
+
+                {% for p in range(1, total_pages + 1) %}
+                    {% if p == page %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ p }}</span>
+                    </li>
+                    {% elif p <= 3 or p >= total_pages - 2 or (p >= page - 2 and p <= page + 2) %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ p }}{% if search %}&search={{ search }}{% endif %}">{{ p }}</a>
+                    </li>
+                    {% elif p == 4 and page > 6 %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    {% elif p == total_pages - 3 and page < total_pages - 5 %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    {% endif %}
+                {% endfor %}
+
+                {% if page < total_pages %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page + 1 }}{% if search %}&search={{ search }}{% endif %}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleUserStatus(userId, activate) {
+    const action = activate ? 'activate' : 'deactivate';
+    if (confirm(`Are you sure you want to ${action} this user?`)) {
+        fetch(`/admin-control-panel-x7k9m2/users/${userId}/${action}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred');
+        });
+    }
+}
+
+function deleteUser(userId, userEmail) {
+    if (confirm(`Are you sure you want to delete user "${userEmail}"? This action cannot be undone.`)) {
+        fetch(`/admin-control-panel-x7k9m2/users/${userId}/delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred');
+        });
+    }
+}
+
+function exportUsers() {
+    window.open('/admin-control-panel-x7k9m2/users/export', '_blank');
+}
+</script>
+{% endblock %}

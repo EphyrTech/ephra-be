@@ -29,6 +29,9 @@ requests==2.31.0
 # JWT validation for Logto
 PyJWT[crypto]==2.8.0
 
+# Template engine for admin panel
+jinja2==3.1.2
+
 # Logging
 # Using standard Python logging module
 

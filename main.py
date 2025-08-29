@@ -7,29 +7,17 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.middleware.sessions import SessionMiddleware
 
-from app.api import (
-    admin,
-    appointments,
-    assignments,
-    auth,
-    care_providers,
-    health,
-    journals,
-    media,
-    metrics,
-    personal_journals,
-    users,
-    websockets,
-)
+from app.api import (admin, admin_panel, appointments, assignments, auth,
+                     care_providers, health, journals, media, metrics,
+                     personal_journals, users, websockets)
 from app.core.config import settings
-from app.core.error_handlers import (
-    database_exception_handler,
-    general_exception_handler,
-    http_exception_handler,
-    service_exception_handler,
-    validation_exception_handler,
-)
+from app.core.error_handlers import (database_exception_handler,
+                                     general_exception_handler,
+                                     http_exception_handler,
+                                     service_exception_handler,
+                                     validation_exception_handler)
 from app.core.logging import setup_logging
 from app.middleware import CacheMiddleware, RateLimiter
 from app.services.exceptions import ServiceException
@@ -147,6 +135,8 @@ else:
 # Add other middleware after CORS
 app.add_middleware(RateLimiter)
 app.add_middleware(CacheMiddleware)
+# Add session middleware for admin panel
+app.add_middleware(SessionMiddleware, secret_key=settings.ADMIN_PANEL_SECRET_KEY)
 
 # Add error handlers
 app.add_exception_handler(ServiceException, service_exception_handler)
@@ -200,6 +190,9 @@ v1_router.include_router(websockets.router, tags=["WebSockets"])
 # Include versioned router in the main app
 app.include_router(v1_router)
 
+# Include admin panel router (not under /v1 for security)
+app.include_router(admin_panel.router)
+
 # Mount static files
 try:
     app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -229,6 +222,10 @@ except Exception as e:
 @app.get("/")
 async def root():
     return {"message": "Welcome to Mental Health API"}
+
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,8 @@
 import os
 from typing import List, Union
-from pydantic_settings import BaseSettings
+
 from dotenv import load_dotenv
+from pydantic_settings import BaseSettings
 
 load_dotenv()
 
@@ -82,5 +83,10 @@ class Settings(BaseSettings):
 
     # WebSockets
     WS_MESSAGE_QUEUE_SIZE: int = int(os.getenv("WS_MESSAGE_QUEUE_SIZE", "100"))
+
+    # Superadmin credentials for admin panel
+    SUPERADMIN_USERNAME: str = os.getenv("SUPERADMIN_USERNAME", "superadmin")
+    SUPERADMIN_PASSWORD: str = os.getenv("SUPERADMIN_PASSWORD", "super_secure_admin_2024!")
+    ADMIN_PANEL_SECRET_KEY: str = os.getenv("ADMIN_PANEL_SECRET_KEY", "admin_panel_secret_key_2024")
 
 settings = Settings()

@@ -1,0 +1,223 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Audit Log{% endblock %}
+{% block page_title %}Audit Log{% endblock %}
+
+{% block page_actions %}
+<div class="btn-group">
+    <button type="button" class="btn btn-outline-secondary" onclick="exportAuditLog()">
+        <i class="fas fa-download"></i> Export Log
+    </button>
+    <button type="button" class="btn btn-outline-warning" onclick="clearOldLogs()">
+        <i class="fas fa-broom"></i> Clear Old Logs
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i>
+    <strong>Audit Trail:</strong> This log shows all administrative actions performed in the system. 
+    All entries are immutable and stored for compliance purposes.
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h6 class="m-0 font-weight-bold text-primary">
+            Administrative Actions Log
+        </h6>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover audit-log">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Admin User</th>
+                        <th>IP Address</th>
+                        <th>Action</th>
+                        <th>Details</th>
+                        <th>Session ID</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in audit_entries %}
+                    <tr>
+                        <td>
+                            <small class="text-muted">{{ entry.timestamp }}</small>
+                        </td>
+                        <td>
+                            <strong>{{ entry.admin_user }}</strong>
+                        </td>
+                        <td>
+                            <code>{{ entry.ip_address }}</code>
+                        </td>
+                        <td>
+                            {% if entry.action.startswith('LOGIN') %}
+                                <span class="badge bg-success">{{ entry.action }}</span>
+                            {% elif entry.action.startswith('LOGOUT') %}
+                                <span class="badge bg-secondary">{{ entry.action }}</span>
+                            {% elif entry.action.startswith('DELETE') %}
+                                <span class="badge bg-danger">{{ entry.action }}</span>
+                            {% elif entry.action.startswith('CREATE') %}
+                                <span class="badge bg-primary">{{ entry.action }}</span>
+                            {% elif entry.action.startswith('UPDATE') or entry.action.startswith('ACTIVATE') or entry.action.startswith('DEACTIVATE') %}
+                                <span class="badge bg-warning">{{ entry.action }}</span>
+                            {% elif entry.action.startswith('VIEW') %}
+                                <span class="badge bg-info">{{ entry.action }}</span>
+                            {% else %}
+                                <span class="badge bg-light text-dark">{{ entry.action }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if entry.details %}
+                                <details>
+                                    <summary class="text-primary" style="cursor: pointer;">
+                                        <i class="fas fa-eye"></i> View Details
+                                    </summary>
+                                    <pre class="mt-2 p-2 bg-light border rounded"><code>{{ entry.details | tojson(indent=2) }}</code></pre>
+                                </details>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ entry.session_id[:8] }}...</small>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <nav aria-label="Audit log pagination">
+            <ul class="pagination justify-content-center">
+                {% if page > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page - 1 }}">Previous</a>
+                </li>
+                {% endif %}
+
+                <li class="page-item active">
+                    <span class="page-link">{{ page }}</span>
+                </li>
+
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page + 1 }}">Next</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+</div>
+
+<!-- Real-time log viewer -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h6 class="m-0 font-weight-bold text-success">
+            <i class="fas fa-circle text-success" id="liveIndicator"></i>
+            Live Activity Monitor
+        </h6>
+    </div>
+    <div class="card-body">
+        <div id="liveLog" class="audit-log" style="height: 300px; overflow-y: auto; background-color: #1a1a1a; color: #00ff00; font-family: 'Courier New', monospace; padding: 10px; border-radius: 5px;">
+            <div class="text-center text-muted">
+                <i class="fas fa-spinner fa-spin"></i> Waiting for live activity...
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let liveLogContainer = document.getElementById('liveLog');
+let liveIndicator = document.getElementById('liveIndicator');
+
+function exportAuditLog() {
+    window.open('/admin-control-panel-x7k9m2/audit-log/export', '_blank');
+}
+
+function clearOldLogs() {
+    if (confirm('Are you sure you want to clear logs older than 30 days? This action cannot be undone.')) {
+        fetch('/admin-control-panel-x7k9m2/audit-log/clear-old', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`Successfully cleared ${data.cleared_count} old log entries.`);
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred');
+        });
+    }
+}
+
+function addLiveLogEntry(entry) {
+    const timestamp = new Date().toISOString();
+    const logLine = document.createElement('div');
+    logLine.innerHTML = `
+        <span class="text-info">[${timestamp}]</span> 
+        <span class="text-warning">${entry.admin_user}@${entry.ip_address}</span> 
+        <span class="text-success">${entry.action}</span>
+        ${entry.details ? `<span class="text-muted"> - ${JSON.stringify(entry.details)}</span>` : ''}
+    `;
+    
+    // Remove "waiting" message if it exists
+    const waitingMsg = liveLogContainer.querySelector('.text-center');
+    if (waitingMsg) {
+        waitingMsg.remove();
+    }
+    
+    liveLogContainer.appendChild(logLine);
+    
+    // Keep only last 50 entries
+    while (liveLogContainer.children.length > 50) {
+        liveLogContainer.removeChild(liveLogContainer.firstChild);
+    }
+    
+    // Scroll to bottom
+    liveLogContainer.scrollTop = liveLogContainer.scrollHeight;
+    
+    // Flash the live indicator
+    liveIndicator.style.color = '#28a745';
+    setTimeout(() => {
+        liveIndicator.style.color = '#6c757d';
+    }, 500);
+}
+
+// Simulate live log updates (in a real implementation, this would be WebSocket or SSE)
+function pollForLiveUpdates() {
+    fetch('/admin-control-panel-x7k9m2/audit-log/live')
+        .then(response => response.json())
+        .then(data => {
+            if (data.entries && data.entries.length > 0) {
+                data.entries.forEach(entry => addLiveLogEntry(entry));
+            }
+        })
+        .catch(error => {
+            console.error('Live log polling error:', error);
+        });
+}
+
+// Poll for updates every 5 seconds
+setInterval(pollForLiveUpdates, 5000);
+
+// Add current session activity to live log
+addLiveLogEntry({
+    admin_user: '{{ session.username }}',
+    ip_address: '{{ session.ip_address }}',
+    action: 'VIEW_AUDIT_LOG',
+    details: {page: {{ page }}}
+});
+</script>
+{% endblock %}

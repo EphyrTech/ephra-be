@@ -1,0 +1,165 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Journals Management{% endblock %}
+{% block page_title %}Journals Management{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h6 class="m-0 font-weight-bold text-primary">
+            Journal Entries ({{ total }} total)
+        </h6>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>User</th>
+                        <th>Title</th>
+                        <th>Mood</th>
+                        <th>Date</th>
+                        <th>Shared with Coach</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for journal in journals %}
+                    <tr>
+                        <td>
+                            <small class="text-muted">{{ journal.id[:8] }}...</small>
+                        </td>
+                        <td>
+                            <strong>{{ journal.user.name or journal.user.email }}</strong>
+                            <br><small class="text-muted">{{ journal.user.email }}</small>
+                        </td>
+                        <td>
+                            <strong>{{ journal.title }}</strong>
+                            {% if journal.content %}
+                            <br><small class="text-muted">{{ journal.content[:100] }}{% if journal.content|length > 100 %}...{% endif %}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if journal.mood %}
+                                {% if journal.mood == 'rad' %}
+                                    <span class="badge bg-success">😄 Rad</span>
+                                {% elif journal.mood == 'good' %}
+                                    <span class="badge bg-info">😊 Good</span>
+                                {% elif journal.mood == 'meh' %}
+                                    <span class="badge bg-warning">😐 Meh</span>
+                                {% elif journal.mood == 'bad' %}
+                                    <span class="badge bg-danger">😞 Bad</span>
+                                {% elif journal.mood == 'awful' %}
+                                    <span class="badge bg-dark">😢 Awful</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ journal.mood }}</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if journal.date %}
+                                <small>{{ journal.date.strftime('%Y-%m-%d') }}</small>
+                            {% else %}
+                                <small class="text-muted">-</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if journal.shared_with_coach %}
+                                <span class="badge bg-success">Yes</span>
+                            {% else %}
+                                <span class="badge bg-secondary">No</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small>{{ journal.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <a href="/admin-control-panel-x7k9m2/journals/{{ journal.id }}" 
+                                   class="btn btn-outline-primary btn-action" title="View">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <button onclick="deleteJournal('{{ journal.id }}', '{{ journal.title }}')" 
+                                        class="btn btn-outline-danger btn-action" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if total_pages > 1 %}
+        <nav aria-label="Journals pagination">
+            <ul class="pagination justify-content-center">
+                {% if page > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page - 1 }}">Previous</a>
+                </li>
+                {% endif %}
+
+                {% for p in range(1, total_pages + 1) %}
+                    {% if p == page %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ p }}</span>
+                    </li>
+                    {% elif p <= 3 or p >= total_pages - 2 or (p >= page - 2 and p <= page + 2) %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ p }}">{{ p }}</a>
+                    </li>
+                    {% elif p == 4 and page > 6 %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    {% elif p == total_pages - 3 and page < total_pages - 5 %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    {% endif %}
+                {% endfor %}
+
+                {% if page < total_pages %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page + 1 }}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function deleteJournal(journalId, journalTitle) {
+    if (confirm(`Are you sure you want to delete journal "${journalTitle}"? This action cannot be undone.`)) {
+        fetch(`/admin-control-panel-x7k9m2/journals/${journalId}/delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred');
+        });
+    }
+}
+</script>
+{% endblock %}

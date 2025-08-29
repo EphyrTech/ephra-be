@@ -1,0 +1,246 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Statistics Cards -->
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-primary shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Total Users</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.total_users }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-users fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-success shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Active Users</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.active_users }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-user-check fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-info shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Total Journals</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.total_journals }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-book fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-warning shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">Appointments</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.total_appointments }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-calendar fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Recent Activity -->
+    <div class="col-lg-8 mb-4">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Recent User Activity</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered" width="100%" cellspacing="0">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Action</th>
+                                <th>Time</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for activity in recent_activity %}
+                            <tr>
+                                <td>{{ activity.user_name or activity.user_email }}</td>
+                                <td>{{ activity.action }}</td>
+                                <td>{{ activity.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                <td>
+                                    {% if activity.status == 'active' %}
+                                        <span class="badge bg-success">Active</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ activity.status }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Info -->
+    <div class="col-lg-4 mb-4">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">System Information</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <strong>Environment:</strong> {{ system_info.environment }}
+                </div>
+                <div class="mb-3">
+                    <strong>Database:</strong> {{ system_info.database_status }}
+                </div>
+                <div class="mb-3">
+                    <strong>Active Sessions:</strong> {{ system_info.active_admin_sessions }}
+                </div>
+                <div class="mb-3">
+                    <strong>Server Time:</strong> {{ system_info.server_time }}
+                </div>
+                <div class="mb-3">
+                    <strong>Uptime:</strong> {{ system_info.uptime }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="card shadow mt-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Quick Actions</h6>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="/admin-control-panel-x7k9m2/users" class="btn btn-outline-primary btn-sm">
+                        <i class="fas fa-users"></i> Manage Users
+                    </a>
+                    <a href="/admin-control-panel-x7k9m2/journals" class="btn btn-outline-info btn-sm">
+                        <i class="fas fa-book"></i> View Journals
+                    </a>
+                    <a href="/admin-control-panel-x7k9m2/appointments" class="btn btn-outline-success btn-sm">
+                        <i class="fas fa-calendar"></i> Appointments
+                    </a>
+                    <a href="/admin-control-panel-x7k9m2/audit-log" class="btn btn-outline-warning btn-sm">
+                        <i class="fas fa-history"></i> Audit Log
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row">
+    <div class="col-lg-6 mb-4">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">User Registration Trend</h6>
+            </div>
+            <div class="card-body">
+                <canvas id="userRegistrationChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-4">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Journal Entries by Day</h6>
+            </div>
+            <div class="card-body">
+                <canvas id="journalEntriesChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // User Registration Chart
+    const userCtx = document.getElementById('userRegistrationChart').getContext('2d');
+    const userChart = new Chart(userCtx, {
+        type: 'line',
+        data: {
+            labels: {{ chart_data.user_registration_labels | tojson }},
+            datasets: [{
+                label: 'New Users',
+                data: {{ chart_data.user_registration_data | tojson }},
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+
+    // Journal Entries Chart
+    const journalCtx = document.getElementById('journalEntriesChart').getContext('2d');
+    const journalChart = new Chart(journalCtx, {
+        type: 'bar',
+        data: {
+            labels: {{ chart_data.journal_entries_labels | tojson }},
+            datasets: [{
+                label: 'Journal Entries',
+                data: {{ chart_data.journal_entries_data | tojson }},
+                backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+
+    // Auto-refresh dashboard every 5 minutes
+    setInterval(function() {
+        window.location.reload();
+    }, 300000);
+</script>
+{% endblock %}

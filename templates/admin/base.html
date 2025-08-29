@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Admin Panel{% endblock %} - Mental Health API</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .sidebar {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .sidebar .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            border-radius: 8px;
+            margin: 2px 0;
+        }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            color: white;
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        .main-content {
+            background-color: #f8f9fa;
+            min-height: 100vh;
+        }
+        .card {
+            border: none;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        }
+        .table th {
+            border-top: none;
+            background-color: #f8f9fa;
+        }
+        .btn-action {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.875rem;
+        }
+        .session-info {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 20px;
+        }
+        .audit-log {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <nav class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="position-sticky pt-3">
+                    <div class="session-info text-white">
+                        <small>
+                            <i class="fas fa-user"></i> {{ session.username }}<br>
+                            <i class="fas fa-clock"></i> {{ session.last_activity.strftime('%H:%M:%S') }}<br>
+                            <i class="fas fa-map-marker-alt"></i> {{ session.ip_address }}
+                        </small>
+                    </div>
+                    
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.url.path.endswith('/dashboard') %}active{% endif %}" href="/admin-control-panel-x7k9m2/dashboard">
+                                <i class="fas fa-tachometer-alt"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'users' in request.url.path %}active{% endif %}" href="/admin-control-panel-x7k9m2/users">
+                                <i class="fas fa-users"></i> Users
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'journals' in request.url.path %}active{% endif %}" href="/admin-control-panel-x7k9m2/journals">
+                                <i class="fas fa-book"></i> Journals
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'appointments' in request.url.path %}active{% endif %}" href="/admin-control-panel-x7k9m2/appointments">
+                                <i class="fas fa-calendar"></i> Appointments
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'care-providers' in request.url.path %}active{% endif %}" href="/admin-control-panel-x7k9m2/care-providers">
+                                <i class="fas fa-user-md"></i> Care Providers
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'media' in request.url.path %}active{% endif %}" href="/admin-control-panel-x7k9m2/media">
+                                <i class="fas fa-file-image"></i> Media Files
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'personal-journals' in request.url.path %}active{% endif %}" href="/admin-control-panel-x7k9m2/personal-journals">
+                                <i class="fas fa-clipboard"></i> Personal Journals
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'availability' in request.url.path %}active{% endif %}" href="/admin-control-panel-x7k9m2/availability">
+                                <i class="fas fa-clock"></i> Availability
+                            </a>
+                        </li>
+                        <hr class="text-white">
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'audit-log' in request.url.path %}active{% endif %}" href="/admin-control-panel-x7k9m2/audit-log">
+                                <i class="fas fa-history"></i> Audit Log
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'sessions' in request.url.path %}active{% endif %}" href="/admin-control-panel-x7k9m2/sessions">
+                                <i class="fas fa-shield-alt"></i> Active Sessions
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-danger" href="/admin-control-panel-x7k9m2/logout">
+                                <i class="fas fa-sign-out-alt"></i> Logout
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <!-- Main content -->
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main-content">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">{% block page_title %}Admin Panel{% endblock %}</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        {% block page_actions %}{% endblock %}
+                    </div>
+                </div>
+
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Auto-refresh session info every 30 seconds
+        setInterval(function() {
+            fetch('/admin-control-panel-x7k9m2/session-info')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.valid) {
+                        // Update session info if needed
+                        console.log('Session valid');
+                    } else {
+                        // Redirect to login if session expired
+                        window.location.href = '/admin-control-panel-x7k9m2/login';
+                    }
+                })
+                .catch(error => {
+                    console.error('Session check failed:', error);
+                });
+        }, 30000);
+
+        // Confirm delete actions
+        function confirmDelete(message) {
+            return confirm(message || 'Are you sure you want to delete this item?');
+        }
+
+        // Show loading spinner for forms
+        function showLoading(button) {
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+            button.disabled = true;
+        }
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

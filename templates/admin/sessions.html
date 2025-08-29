@@ -1,0 +1,247 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Active Sessions{% endblock %}
+{% block page_title %}Active Admin Sessions{% endblock %}
+
+{% block page_actions %}
+<div class="btn-group">
+    <button type="button" class="btn btn-outline-danger" onclick="terminateAllOtherSessions()">
+        <i class="fas fa-ban"></i> Terminate Other Sessions
+    </button>
+    <button type="button" class="btn btn-outline-secondary" onclick="refreshSessions()">
+        <i class="fas fa-sync"></i> Refresh
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="alert alert-warning">
+    <i class="fas fa-shield-alt"></i>
+    <strong>Security Notice:</strong> Monitor active admin sessions for unauthorized access. 
+    Terminate any suspicious sessions immediately.
+</div>
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <h3 class="text-primary">{{ sessions|length }}</h3>
+                <p class="text-muted">Active Sessions</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <h3 class="text-success">{{ session.username }}</h3>
+                <p class="text-muted">Current User</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <h3 class="text-info">{{ session.ip_address }}</h3>
+                <p class="text-muted">Your IP Address</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <h6 class="m-0 font-weight-bold text-primary">
+            Session Details
+        </h6>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Session ID</th>
+                        <th>Username</th>
+                        <th>IP Address</th>
+                        <th>User Agent</th>
+                        <th>Created</th>
+                        <th>Last Activity</th>
+                        <th>Expires</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sess in sessions %}
+                    <tr {% if sess.session_id == session.session_id %}class="table-success"{% endif %}>
+                        <td>
+                            <code>{{ sess.session_id[:12] }}...</code>
+                            {% if sess.session_id == session.session_id %}
+                                <span class="badge bg-success ms-2">Current</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <strong>{{ sess.username }}</strong>
+                        </td>
+                        <td>
+                            <code>{{ sess.ip_address }}</code>
+                            {% if sess.ip_address != session.ip_address %}
+                                <i class="fas fa-exclamation-triangle text-warning" title="Different IP"></i>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small class="text-muted">
+                                {% if 'Chrome' in sess.user_agent %}
+                                    <i class="fab fa-chrome"></i> Chrome
+                                {% elif 'Firefox' in sess.user_agent %}
+                                    <i class="fab fa-firefox"></i> Firefox
+                                {% elif 'Safari' in sess.user_agent %}
+                                    <i class="fab fa-safari"></i> Safari
+                                {% elif 'Edge' in sess.user_agent %}
+                                    <i class="fab fa-edge"></i> Edge
+                                {% else %}
+                                    <i class="fas fa-globe"></i> Browser
+                                {% endif %}
+                                <br>{{ sess.user_agent[:50] }}{% if sess.user_agent|length > 50 %}...{% endif %}
+                            </small>
+                        </td>
+                        <td>
+                            <small>{{ sess.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                        </td>
+                        <td>
+                            <small>{{ sess.last_activity.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                            {% set minutes_ago = ((session.last_activity - sess.last_activity).total_seconds() / 60)|int %}
+                            {% if minutes_ago < 5 %}
+                                <span class="badge bg-success">Active</span>
+                            {% elif minutes_ago < 30 %}
+                                <span class="badge bg-warning">{{ minutes_ago }}m ago</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ minutes_ago }}m ago</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small>{{ sess.expires_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                            {% set hours_left = ((sess.expires_at - session.last_activity).total_seconds() / 3600)|int %}
+                            {% if hours_left > 4 %}
+                                <span class="badge bg-success">{{ hours_left }}h left</span>
+                            {% elif hours_left > 1 %}
+                                <span class="badge bg-warning">{{ hours_left }}h left</span>
+                            {% else %}
+                                <span class="badge bg-danger">Expiring soon</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if sess.is_valid() %}
+                                <span class="badge bg-success">Valid</span>
+                            {% else %}
+                                <span class="badge bg-danger">Expired</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if sess.session_id != session.session_id %}
+                                <button onclick="terminateSession('{{ sess.session_id }}', '{{ sess.ip_address }}')" 
+                                        class="btn btn-outline-danger btn-sm" title="Terminate Session">
+                                    <i class="fas fa-ban"></i>
+                                </button>
+                            {% else %}
+                                <span class="text-muted">Current</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Session Security Information -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h6 class="m-0 font-weight-bold text-info">
+            <i class="fas fa-info-circle"></i> Session Security Information
+        </h6>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Security Features:</h6>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success"></i> IP Address Validation</li>
+                    <li><i class="fas fa-check text-success"></i> Session Timeout (8 hours)</li>
+                    <li><i class="fas fa-check text-success"></i> Secure Cookies (HttpOnly)</li>
+                    <li><i class="fas fa-check text-success"></i> Activity Monitoring</li>
+                    <li><i class="fas fa-check text-success"></i> Automatic Cleanup</li>
+                </ul>
+            </div>
+            <div class="col-md-6">
+                <h6>Best Practices:</h6>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-lightbulb text-warning"></i> Always logout when finished</li>
+                    <li><i class="fas fa-lightbulb text-warning"></i> Monitor for suspicious sessions</li>
+                    <li><i class="fas fa-lightbulb text-warning"></i> Use secure networks only</li>
+                    <li><i class="fas fa-lightbulb text-warning"></i> Keep browser updated</li>
+                    <li><i class="fas fa-lightbulb text-warning"></i> Report security incidents</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function terminateSession(sessionId, ipAddress) {
+    if (confirm(`Are you sure you want to terminate the session from ${ipAddress}?`)) {
+        fetch(`/admin-control-panel-x7k9m2/sessions/${sessionId}/terminate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred');
+        });
+    }
+}
+
+function terminateAllOtherSessions() {
+    if (confirm('Are you sure you want to terminate ALL other admin sessions? This will log out all other administrators.')) {
+        fetch('/admin-control-panel-x7k9m2/sessions/terminate-others', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`Successfully terminated ${data.terminated_count} sessions.`);
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred');
+        });
+    }
+}
+
+function refreshSessions() {
+    location.reload();
+}
+
+// Auto-refresh every 30 seconds
+setInterval(refreshSessions, 30000);
+</script>
+{% endblock %}

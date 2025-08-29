@@ -18,6 +18,9 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/mental_health_db
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-for-development}
+      - SUPERADMIN_USERNAME=superadmin
+      - SUPERADMIN_PASSWORD=super_secure_admin_2024!
+      - ADMIN_PANEL_SECRET_KEY=admin_panel_secret_key_2024
       - PYTHONPATH=/app
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1

@@ -110,23 +110,29 @@ async def admin_login(
 @router.get("/logout")
 async def admin_logout(
     request: Request,
-    response: Response,
-    session: AdminSession = Depends(require_admin_session)
+    response: Response
 ):
     """Handle admin logout"""
+    # Try to get session for logging, but don't require it
+    session = get_admin_session_or_redirect(request)
+
     session_id = request.cookies.get("admin_session_id")
     if session_id:
         invalidate_admin_session(session_id)
-    
+
     response = RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
     response.delete_cookie("admin_session_id")
-    
-    log_admin_action(session, "LOGOUT")
+
+    if session:
+        log_admin_action(session, "LOGOUT")
     return response
 
 @router.get("/session-info")
-async def session_info(session: AdminSession = Depends(require_admin_session)):
+async def session_info(request: Request):
     """Get current session info for AJAX checks"""
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
     return {"valid": True, "session": session.to_dict()}
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -264,9 +270,14 @@ async def admin_users_list(
 @router.get("/sessions", response_class=HTMLResponse)
 async def admin_sessions_list(
     request: Request,
-    session: AdminSession = Depends(require_admin_session)
+    
 ):
     """List active admin sessions"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+    
     log_admin_action(session, "VIEW_SESSIONS")
     
     return templates.TemplateResponse("admin/sessions.html", {
@@ -278,11 +289,15 @@ async def admin_sessions_list(
 @router.get("/audit-log", response_class=HTMLResponse)
 async def admin_audit_log(
     request: Request,
-    session: AdminSession = Depends(require_admin_session),
     page: int = 1,
     per_page: int = 50
 ):
     """Display audit log of admin actions"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
     log_admin_action(session, "VIEW_AUDIT_LOG", {"page": page})
 
     # Get real audit entries from the in-memory audit log
@@ -301,10 +316,14 @@ async def admin_audit_log(
 async def admin_user_detail(
     request: Request,
     user_id: str,
-    session: AdminSession = Depends(require_admin_session),
     db: Session = Depends(get_db)
 ):
     """View user details"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
     log_admin_action(session, "VIEW_USER_DETAIL", {"user_id": user_id})
 
     user = db.query(User).filter(User.id == user_id).first()
@@ -328,7 +347,7 @@ async def admin_user_detail(
 @router.post("/users/{user_id}/activate")
 async def admin_activate_user(
     user_id: str,
-    session: AdminSession = Depends(require_admin_session),
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Activate user"""
@@ -346,7 +365,7 @@ async def admin_activate_user(
 @router.post("/users/{user_id}/deactivate")
 async def admin_deactivate_user(
     user_id: str,
-    session: AdminSession = Depends(require_admin_session),
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Deactivate user"""
@@ -364,7 +383,7 @@ async def admin_deactivate_user(
 @router.post("/users/{user_id}/delete")
 async def admin_delete_user(
     user_id: str,
-    session: AdminSession = Depends(require_admin_session),
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Delete user (soft delete by deactivating)"""
@@ -383,12 +402,16 @@ async def admin_delete_user(
 @router.get("/journals", response_class=HTMLResponse)
 async def admin_journals_list(
     request: Request,
-    session: AdminSession = Depends(require_admin_session),
     db: Session = Depends(get_db),
     page: int = 1,
     per_page: int = 20
 ):
     """List all journals"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
     log_admin_action(session, "VIEW_JOURNALS", {"page": page})
 
     query = db.query(Journal).options(joinedload(Journal.user)).order_by(desc(Journal.created_at))
@@ -410,7 +433,6 @@ async def admin_journals_list(
 @router.get("/appointments", response_class=HTMLResponse)
 async def admin_appointments_list(
     request: Request,
-    session: AdminSession = Depends(require_admin_session),
     db: Session = Depends(get_db),
     page: int = 1,
     per_page: int = 20
@@ -441,7 +463,6 @@ async def admin_appointments_list(
 @router.get("/care-providers", response_class=HTMLResponse)
 async def admin_care_providers_list(
     request: Request,
-    session: AdminSession = Depends(require_admin_session),
     db: Session = Depends(get_db),
     page: int = 1,
     per_page: int = 20
@@ -471,7 +492,6 @@ async def admin_care_providers_list(
 @router.get("/media", response_class=HTMLResponse)
 async def admin_media_list(
     request: Request,
-    session: AdminSession = Depends(require_admin_session),
     db: Session = Depends(get_db),
     page: int = 1,
     per_page: int = 20
@@ -498,7 +518,6 @@ async def admin_media_list(
 @router.get("/personal-journals", response_class=HTMLResponse)
 async def admin_personal_journals_list(
     request: Request,
-    session: AdminSession = Depends(require_admin_session),
     db: Session = Depends(get_db),
     page: int = 1,
     per_page: int = 20
@@ -529,7 +548,6 @@ async def admin_personal_journals_list(
 @router.get("/availability", response_class=HTMLResponse)
 async def admin_availability_list(
     request: Request,
-    session: AdminSession = Depends(require_admin_session),
     db: Session = Depends(get_db),
     page: int = 1,
     per_page: int = 20
@@ -558,7 +576,7 @@ async def admin_availability_list(
 @router.post("/journals/{journal_id}/delete")
 async def admin_delete_journal(
     journal_id: str,
-    session: AdminSession = Depends(require_admin_session),
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Delete journal entry"""
@@ -577,7 +595,6 @@ async def admin_delete_journal(
 async def admin_update_appointment_status(
     appointment_id: str,
     request: Request,
-    session: AdminSession = Depends(require_admin_session),
     db: Session = Depends(get_db)
 ):
     """Update appointment status"""
@@ -604,7 +621,7 @@ async def admin_update_appointment_status(
 @router.post("/appointments/{appointment_id}/delete")
 async def admin_delete_appointment(
     appointment_id: str,
-    session: AdminSession = Depends(require_admin_session),
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Delete appointment"""
@@ -622,7 +639,8 @@ async def admin_delete_appointment(
 @router.post("/sessions/{session_id}/terminate")
 async def admin_terminate_session(
     session_id: str,
-    current_session: AdminSession = Depends(require_admin_session)
+    current_,
+    request: Request
 ):
     """Terminate a specific admin session"""
     log_admin_action(current_session, "TERMINATE_SESSION", {"terminated_session_id": session_id})
@@ -634,7 +652,8 @@ async def admin_terminate_session(
 
 @router.post("/sessions/terminate-others")
 async def admin_terminate_other_sessions(
-    current_session: AdminSession = Depends(require_admin_session)
+    current_,
+    request: Request
 ):
     """Terminate all other admin sessions except current one"""
     terminated_count = 0
@@ -656,7 +675,8 @@ async def admin_terminate_other_sessions(
 
 @router.get("/audit-log/live")
 async def admin_audit_log_live(
-    session: AdminSession = Depends(require_admin_session)
+    request: Request,
+    
 ):
     """Get live audit log entries for real-time monitoring"""
     from app.core.admin_auth import get_recent_audit_entries
@@ -668,9 +688,14 @@ async def admin_audit_log_live(
 @router.get("/users/create", response_class=HTMLResponse)
 async def admin_user_create_form(
     request: Request,
-    session: AdminSession = Depends(require_admin_session)
+    
 ):
     """Show user creation form"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+    
     log_admin_action(session, "VIEW_USER_CREATE_FORM")
     return templates.TemplateResponse("admin/user_create.html", {
         "request": request,
@@ -680,7 +705,6 @@ async def admin_user_create_form(
 @router.post("/users/create")
 async def admin_user_create(
     request: Request,
-    session: AdminSession = Depends(require_admin_session),
     db: Session = Depends(get_db)
 ):
     """Create a new user"""
@@ -731,7 +755,7 @@ async def admin_user_create(
 
 @router.get("/users/export")
 async def admin_users_export(
-    session: AdminSession = Depends(require_admin_session),
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Export users data as CSV"""
@@ -772,7 +796,7 @@ async def admin_users_export(
 @router.post("/media/{media_id}/delete")
 async def admin_delete_media(
     media_id: str,
-    session: AdminSession = Depends(require_admin_session),
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Delete media file"""
@@ -790,7 +814,7 @@ async def admin_delete_media(
 @router.post("/personal-journals/{journal_id}/delete")
 async def admin_delete_personal_journal(
     journal_id: str,
-    session: AdminSession = Depends(require_admin_session),
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Delete personal journal entry"""
@@ -809,7 +833,6 @@ async def admin_delete_personal_journal(
 async def admin_toggle_availability(
     slot_id: str,
     request: Request,
-    session: AdminSession = Depends(require_admin_session),
     db: Session = Depends(get_db)
 ):
     """Toggle availability slot status"""
@@ -833,7 +856,7 @@ async def admin_toggle_availability(
 @router.post("/availability/{slot_id}/delete")
 async def admin_delete_availability(
     slot_id: str,
-    session: AdminSession = Depends(require_admin_session),
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Delete availability slot"""

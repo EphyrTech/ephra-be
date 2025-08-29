@@ -141,7 +141,9 @@
     <script>
         // Auto-refresh session info every 30 seconds
         setInterval(function() {
-            fetch('/admin-control-panel-x7k9m2/session-info')
+            fetch('/admin-control-panel-x7k9m2/session-info', {
+                    credentials: 'include'
+                })
                 .then(response => response.json())
                 .then(data => {
                     if (data.valid) {

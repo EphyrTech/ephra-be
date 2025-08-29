@@ -138,6 +138,7 @@ function toggleAvailability(slotId, makeAvailable) {
             headers: {
                 'Content-Type': 'application/json',
             },
+            credentials: 'include',
             body: JSON.stringify({available: makeAvailable})
         })
         .then(response => response.json())
@@ -161,7 +162,8 @@ function deleteAvailability(slotId) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-            }
+            },
+            credentials: 'include'
         })
         .then(response => response.json())
         .then(data => {

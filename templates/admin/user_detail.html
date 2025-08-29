@@ -298,7 +298,8 @@ function toggleUserStatus(userId, activate) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-            }
+            },
+            credentials: 'include'
         })
         .then(response => response.json())
         .then(data => {

@@ -144,7 +144,8 @@ function clearOldLogs() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-            }
+            },
+            credentials: 'include'
         })
         .then(response => response.json())
         .then(data => {
@@ -197,7 +198,9 @@ function addLiveLogEntry(entry) {
 
 // Simulate live log updates (in a real implementation, this would be WebSocket or SSE)
 function pollForLiveUpdates() {
-    fetch('/admin-control-panel-x7k9m2/audit-log/live')
+    fetch('/admin-control-panel-x7k9m2/audit-log/live', {
+            credentials: 'include'
+        })
         .then(response => response.json())
         .then(data => {
             if (data.entries && data.entries.length > 0) {

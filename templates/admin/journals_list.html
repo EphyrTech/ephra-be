@@ -145,7 +145,8 @@ function deleteJournal(journalId, journalTitle) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-            }
+            },
+            credentials: 'include'
         })
         .then(response => response.json())
         .then(data => {

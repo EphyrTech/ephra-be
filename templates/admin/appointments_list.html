@@ -158,6 +158,7 @@ function updateAppointmentStatus(appointmentId, newStatus) {
             headers: {
                 'Content-Type': 'application/json',
             },
+            credentials: 'include',
             body: JSON.stringify({status: newStatus})
         })
         .then(response => response.json())
@@ -181,7 +182,8 @@ function deleteAppointment(appointmentId) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-            }
+            },
+            credentials: 'include'
         })
         .then(response => response.json())
         .then(data => {

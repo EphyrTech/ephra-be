@@ -9,7 +9,11 @@ from app.core.auth_middleware import verify_access_token
 from app.db.database import get_db
 from app.db.models import User, UserAssignment, UserRole
 from app.schemas.appointment import Appointment as AppointmentSchema
-from app.schemas.appointment import AppointmentCreate, AppointmentUpdate
+from app.schemas.appointment import (
+    AppointmentCreate,
+    AppointmentReschedule,
+    AppointmentUpdate,
+)
 from app.services.appointment_service import AppointmentService
 from app.services.exceptions import ServiceException
 
@@ -147,6 +151,31 @@ def get_appointment(
         raise HTTPException(status_code=status_code, detail=e.message)
 
 
+@router.put("/{appointment_id}/reschedule", response_model=AppointmentSchema)
+def reschedule_appointment(
+    appointment_id: str,
+    reschedule_data: AppointmentReschedule,
+    current_user: User = Depends(get_current_user_from_auth),
+    db: Session = Depends(get_db),
+) -> Any:
+    """
+    Reschedule an appointment and update email reminder.
+    """
+    try:
+        appointment_service = AppointmentService(db)
+        appointment = appointment_service.reschedule_appointment(
+            appointment_id, reschedule_data, current_user
+        )
+        return appointment
+    except ServiceException as e:
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in e.message.lower()
+            else status.HTTP_403_FORBIDDEN
+        )
+        raise HTTPException(status_code=status_code, detail=e.message)
+
+
 @router.put("/{appointment_id}", response_model=AppointmentSchema)
 def update_appointment(
     appointment_id: str,
@@ -179,11 +208,11 @@ def cancel_appointment(
     db: Session = Depends(get_db),
 ) -> None:
     """
-    Cancel an appointment.
+    Cancel an appointment and its reminder email.
     """
     try:
         appointment_service = AppointmentService(db)
-        appointment_service.cancel_appointment(appointment_id, current_user)
+        appointment_service.cancel_appointment_with_email(appointment_id, current_user)
     except ServiceException as e:
         status_code = (
             status.HTTP_404_NOT_FOUND

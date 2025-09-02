@@ -3,14 +3,18 @@
 import hashlib
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security.utils import get_authorization_scheme_param
+from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.core.config import settings
+from app.core.security import verify_password
+from app.db.database import get_db
+from app.db.models import User, UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -21,20 +25,21 @@ admin_sessions = {}
 audit_log_entries = []
 
 class AdminSession:
-    def __init__(self, session_id: str, username: str, ip_address: str, user_agent: str):
+    def __init__(self, session_id: str, username: str, ip_address: str, user_agent: str, user_id: str):
         self.session_id = session_id
         self.username = username
         self.ip_address = ip_address
         self.user_agent = user_agent
-        self.created_at = datetime.utcnow()
-        self.last_activity = datetime.utcnow()
-        self.expires_at = datetime.utcnow() + timedelta(hours=8)  # 8 hour session
+        self.created_at = datetime.now(tz=timezone.utc)
+        self.last_activity = datetime.now(tz=timezone.utc)
+        self.user_id = user_id
+        self.expires_at = datetime.now(tz=timezone.utc) + timedelta(hours=8)  # 8 hour session
 
     def is_valid(self) -> bool:
-        return datetime.utcnow() < self.expires_at
+        return datetime.now(tz=timezone.utc) < self.expires_at
 
     def update_activity(self):
-        self.last_activity = datetime.utcnow()
+        self.last_activity = datetime.now(tz=timezone.utc)
 
     def to_dict(self) -> dict:
         return {
@@ -68,15 +73,32 @@ def get_user_agent(request: Request) -> str:
     """Get user agent from request"""
     return request.headers.get("User-Agent", "unknown")
 
-def authenticate_superadmin(username: str, password: str) -> bool:
-    """Authenticate superadmin credentials"""
-    return (username == settings.SUPERADMIN_USERNAME and 
-            password == settings.SUPERADMIN_PASSWORD)
+def authenticate_superadmin(username: str, password: str, db: Optional[Session] = None) -> bool:
+    """Authenticate superadmin credentials - checks both hardcoded superadmin and database admin users"""
+    # First check hardcoded superadmin credentials
+    if (username == settings.SUPERADMIN_USERNAME and
+        password == settings.SUPERADMIN_PASSWORD):
+        return True
 
-def create_admin_session(username: str, ip_address: str, user_agent: str) -> str:
+    # If database session is provided, check for admin users in database
+    if db is not None:
+        # Check if username is an email (admin users in DB)
+        if "@" in username:
+            admin_user = db.query(User).filter(
+                User.email == username,
+                User.role == UserRole.ADMIN,
+                User.is_active == True
+            ).first()
+
+            if admin_user and admin_user.hashed_password:
+                return verify_password(password, admin_user.hashed_password)
+
+    return False
+
+def create_admin_session(username: str, ip_address: str, user_agent: str, user_id: str) -> str:
     """Create a new admin session"""
     session_id = secrets.token_urlsafe(32)
-    session = AdminSession(session_id, username, ip_address, user_agent)
+    session = AdminSession(session_id, username, ip_address, user_agent, user_id)
     admin_sessions[session_id] = session
     
     # Log session creation
@@ -124,7 +146,7 @@ class AdminAuthException(Exception):
     """Custom exception for admin authentication that triggers redirect"""
     pass
 
-def require_admin_session(request: Request) -> AdminSession:
+def require_admin_session(request: Request, db: Session = Depends(get_db)) -> AdminSession:
     """Dependency to require valid admin session"""
     # Clean up expired sessions periodically
     cleanup_expired_sessions()
@@ -158,29 +180,12 @@ def require_admin_session(request: Request) -> AdminSession:
                 detail="Invalid or expired admin session"
             )
 
-    # Verify IP address for additional security
-    current_ip = get_client_ip(request)
-    if session.ip_address != current_ip:
-        logger.warning(f"Admin session IP mismatch - Session IP: {session.ip_address}, Current IP: {current_ip}")
-        invalidate_admin_session(session_id)
-        # Check if this is an HTML request (browser) vs API request
-        accept_header = request.headers.get("accept", "")
-        if "text/html" in accept_header:
-            # Trigger redirect for HTML requests
-            raise AdminAuthException("IP mismatch")
-        else:
-            # Return JSON error for API requests
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Session security violation"
-            )
-
     return session
 
 def log_admin_action(session: AdminSession, action: str, details: dict = None):
     """Log admin actions for audit trail"""
     log_data = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
         "admin_user": session.username,
         "ip_address": session.ip_address,
         "user_agent": session.user_agent,
@@ -218,3 +223,43 @@ def get_audit_log_entries(page: int = 1, per_page: int = 50):
 def get_recent_audit_entries(limit: int = 10):
     """Get most recent audit entries for live monitoring"""
     return list(reversed(audit_log_entries[-limit:]))
+
+def verify_admin_users_exist(db: Session) -> dict:
+    """Verify that admin users exist in the database"""
+    try:
+        # Count admin users in database
+        admin_count = db.query(User).filter(
+            User.role == UserRole.ADMIN,
+            User.is_active == True
+        ).count()
+
+        # Get list of admin users
+        admin_users = db.query(User).filter(
+            User.role == UserRole.ADMIN,
+            User.is_active == True
+        ).all()
+
+        admin_list = []
+        for admin in admin_users:
+            admin_list.append({
+                "id": admin.id,
+                "email": admin.email,
+                "name": admin.name,
+                "created_at": admin.created_at.isoformat() if admin.created_at is not None else None,
+                "has_password": bool(admin.hashed_password)
+            })
+
+        return {
+            "success": True,
+            "admin_count": admin_count,
+            "admins": admin_list,
+            "superadmin_configured": bool(settings.SUPERADMIN_USERNAME and settings.SUPERADMIN_PASSWORD)
+        }
+    except Exception as e:
+        logger.error(f"Error verifying admin users: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "admin_count": 0,
+            "admins": []
+        }

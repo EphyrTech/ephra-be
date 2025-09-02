@@ -58,7 +58,7 @@ def setup_logging(log_dir: str = "logs"):
     
     # Log startup message
     logger.info(f"Logging initialized. Level: {settings.LOG_LEVEL}")
-    logger.info(f"Environment: {settings.ENVIRONMENT}")
+    logger.info(f"Environment: {settings.ENV}")
     
     return logger
 

@@ -142,6 +142,58 @@
                 </table>
             </div>
         </div>
+
+        <!-- Availability Pattern Creator -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-success">Create Availability Pattern</h6>
+            </div>
+            <div class="card-body">
+                <form id="availabilityPatternForm">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="dayOfWeek" class="form-label">Day of Week</label>
+                            <select class="form-select" id="dayOfWeek" name="dayOfWeek" required>
+                                <option value="">Select Day</option>
+                                <option value="0">Monday</option>
+                                <option value="1">Tuesday</option>
+                                <option value="2">Wednesday</option>
+                                <option value="3">Thursday</option>
+                                <option value="4">Friday</option>
+                                <option value="5">Saturday</option>
+                                <option value="6">Sunday</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="applyForMonth" class="form-label">Apply for Next Month</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="applyForMonth" name="applyForMonth" checked>
+                                <label class="form-check-label" for="applyForMonth">
+                                    Create slots for the next 4 weeks
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="startTime" class="form-label">Start Time</label>
+                            <input type="time" class="form-control" id="startTime" name="startTime" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="endTime" class="form-label">End Time</label>
+                            <input type="time" class="form-control" id="endTime" name="endTime" required>
+                        </div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-calendar-plus"></i> Create Availability Pattern
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
         {% endif %}
     </div>
 
@@ -315,5 +367,72 @@ function toggleUserStatus(userId, activate) {
         });
     }
 }
+
+// Handle availability pattern form submission
+document.addEventListener('DOMContentLoaded', function() {
+    const patternForm = document.getElementById('availabilityPatternForm');
+    if (patternForm) {
+        patternForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(this);
+            const patternData = {
+                dayOfWeek: parseInt(formData.get('dayOfWeek')),
+                startTime: formData.get('startTime'),
+                endTime: formData.get('endTime'),
+                applyForMonth: formData.get('applyForMonth') === 'on',
+                careProviderId: '{{ user.id }}'
+            };
+
+            // Validate times
+            if (patternData.startTime >= patternData.endTime) {
+                alert('Start time must be before end time');
+                return;
+            }
+
+            const submitBtn = this.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+            submitBtn.disabled = true;
+
+            fetch('/admin-control-panel-x7k9m2/availability/create-pattern', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include',
+                body: JSON.stringify(patternData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`Successfully created ${data.created_count} availability slots!`);
+                    if (data.conflicts && data.conflicts.length > 0) {
+                        alert(`Note: ${data.conflicts.length} slots were skipped due to conflicts with existing appointments.`);
+                    }
+                    this.reset();
+                } else {
+                    if (data.suggested_ranges) {
+                        let message = `Error: ${data.message}\n\nSuggested available time ranges for today:\n`;
+                        data.suggested_ranges.forEach(range => {
+                            message += `${range.start} - ${range.end}\n`;
+                        });
+                        alert(message);
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while creating availability pattern');
+            })
+            .finally(() => {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            });
+        });
+    }
+});
 </script>
 {% endblock %}

@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+import pendulum
 from fastapi import (APIRouter, Depends, Form, HTTPException, Request,
                      Response, status)
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -23,11 +24,19 @@ from app.db.models import (Appointment, AppointmentStatus, Availability,
                            CareProviderProfile, Journal, MediaFile,
                            PersonalJournal, SpecialistType, User, UserRole,
                            generate_uuid)
+from app.middleware import invalidate_cache
 
 logger = logging.getLogger(__name__)
 
 # Initialize Jinja2 templates
 templates = Jinja2Templates(directory="templates")
+
+def add_no_cache_headers(response):
+    """Add headers to prevent caching of admin pages"""
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 # Router with uncommon path for security
 router = APIRouter(prefix="/admin-control-panel-x7k9m2", tags=["Admin Panel"])
@@ -84,15 +93,15 @@ async def admin_login(
     # Log login attempt
     logger.info(f"Admin login attempt - Username: {username}, IP: {ip_address}")
     
-    if not authenticate_superadmin(username, password):
+    if not authenticate_superadmin(username, password, db):
         logger.warning(f"Failed admin login attempt - Username: {username}, IP: {ip_address}")
         return templates.TemplateResponse("admin/login.html", {
             "request": request,
             "error": "Invalid credentials"
         }, status_code=401)
-    
+    user = db.query(User).filter(User.display_name == username).first()
     # Create session
-    session_id = create_admin_session(username, ip_address, user_agent)
+    session_id = create_admin_session(username, ip_address, user_agent, user.id)
     
     # Set secure cookie
     response = RedirectResponse(url="/admin-control-panel-x7k9m2/dashboard", status_code=302)
@@ -101,7 +110,7 @@ async def admin_login(
         value=session_id,
         max_age=8 * 60 * 60,  # 8 hours
         httponly=True,
-        secure=settings.ENVIRONMENT == "production",
+        secure=settings.ENV == "prod",
         samesite="strict"
     )
     
@@ -171,7 +180,7 @@ async def admin_dashboard(
     
     # System information
     system_info = {
-        "environment": settings.ENVIRONMENT,
+        "environment": settings.ENV,
         "database_status": "Connected",
         "active_admin_sessions": len(admin_sessions),
         "server_time": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
@@ -181,7 +190,7 @@ async def admin_dashboard(
     # Chart data (last 7 days)
     chart_data = get_dashboard_chart_data(db)
     
-    return templates.TemplateResponse("admin/dashboard.html", {
+    response = templates.TemplateResponse("admin/dashboard.html", {
         "request": request,
         "session": session,
         "stats": stats,
@@ -189,6 +198,7 @@ async def admin_dashboard(
         "system_info": system_info,
         "chart_data": chart_data
     })
+    return add_no_cache_headers(response)
 
 def get_dashboard_chart_data(db: Session) -> Dict[str, Any]:
     """Get chart data for dashboard"""
@@ -371,13 +381,41 @@ async def admin_user_create(
                 id=str(uuid.uuid4()),
                 user_id=new_user.id,
                 license_number=user_data.get("license_number"),
-                specialty=SpecialistType(user_data.get("specialty", "mental_health")),
+                specialty=SpecialistType(user_data.get("specialty", "mental")),
                 hourly_rate=user_data.get("hourly_rate"),
                 bio=user_data.get("bio")
             )
             db.add(care_profile)
 
+            # Create availability slots if provided
+            availability_slots = user_data.get("availability_slots", [])
+            if availability_slots:
+                from datetime import datetime
+
+                from app.db.models import Availability
+
+                for slot_data in availability_slots:
+                    try:
+                        # Parse datetime strings
+                        start_time = datetime.fromisoformat(slot_data["start_time"])
+                        end_time = datetime.fromisoformat(slot_data["end_time"])
+
+                        availability = Availability(
+                            id=str(uuid.uuid4()),
+                            care_provider_id=care_profile.id,
+                            start_time=start_time,
+                            end_time=end_time,
+                            is_available=slot_data.get("is_available", True)
+                        )
+                        db.add(availability)
+                    except (ValueError, KeyError) as e:
+                        # Skip invalid availability slots
+                        continue
+
         db.commit()
+
+        # Invalidate cache after user creation
+        invalidate_cache()
 
         return {"success": True, "message": "User created successfully", "user_id": new_user.id}
 
@@ -437,6 +475,9 @@ async def admin_activate_user(
     user.is_active = True
     db.commit()
 
+    # Invalidate cache after user activation
+    invalidate_cache()
+
     return {"success": True, "message": "User activated successfully"}
 
 @router.post("/users/{user_id}/deactivate")
@@ -458,6 +499,9 @@ async def admin_deactivate_user(
 
     user.is_active = False
     db.commit()
+
+    # Invalidate cache after user deactivation
+    invalidate_cache()
 
     return {"success": True, "message": "User deactivated successfully"}
 
@@ -481,6 +525,9 @@ async def admin_delete_user(
     # Soft delete by deactivating
     user.is_active = False
     db.commit()
+
+    # Invalidate cache after user deletion
+    invalidate_cache()
 
     return {"success": True, "message": "User deleted successfully"}
 
@@ -555,6 +602,9 @@ async def admin_user_edit(
 
     db.commit()
     db.refresh(user)
+
+    # Invalidate cache after user update
+    invalidate_cache()
 
     return {"success": True, "message": "User updated successfully", "user": {
         "id": str(user.id),
@@ -745,13 +795,36 @@ async def admin_availability_list(
 
     log_admin_action(session, "VIEW_AVAILABILITY", {"page": page})
 
-    query = db.query(Availability).options(joinedload(Availability.care_provider)).order_by(desc(Availability.created_at))
-    total = query.count()
-    availability_slots = query.offset((page - 1) * per_page).limit(per_page).all()
+    from sqlalchemy import func
+
+    from app.db.models import Appointment, AppointmentStatus
+
+    # First, let's get availability slots with proper user info
+    availability_query = db.query(Availability).options(
+        joinedload(Availability.care_provider).joinedload(CareProviderProfile.user)
+    ).order_by(desc(Availability.created_at))
+
+    availability_slots_raw = availability_query.offset((page - 1) * per_page).limit(per_page).all()
+
+    # Now add appointment counts for each slot
+    availability_slots = []
+    for slot in availability_slots_raw:
+        # Count appointments that overlap with this availability slot
+        appointment_count = db.query(Appointment).filter(
+            Appointment.care_provider_id == slot.care_provider.user_id,
+            Appointment.start_time < slot.end_time,
+            Appointment.end_time > slot.start_time,
+            Appointment.status.in_([AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED])
+        ).count()
+
+        slot.appointment_count = appointment_count
+        availability_slots.append(slot)
+
+    total = db.query(Availability).count()
 
     total_pages = (total + per_page - 1) // per_page
 
-    return templates.TemplateResponse("admin/availability_list.html", {
+    response = templates.TemplateResponse("admin/availability_list.html", {
         "request": request,
         "session": session,
         "availability_slots": availability_slots,
@@ -760,6 +833,47 @@ async def admin_availability_list(
         "total": total,
         "total_pages": total_pages
     })
+    return add_no_cache_headers(response)
+
+@router.get("/availability/{slot_id}", response_class=HTMLResponse)
+async def admin_availability_detail(
+    slot_id: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Show availability slot details with appointments"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
+
+    log_admin_action(session, "VIEW_AVAILABILITY_DETAIL", {"slot_id": slot_id})
+
+    # Get availability slot with care provider info
+    slot = db.query(Availability).options(
+        joinedload(Availability.care_provider).joinedload(CareProviderProfile.user)
+    ).filter(Availability.id == slot_id).first()
+
+    if not slot:
+        raise HTTPException(status_code=404, detail="Availability slot not found")
+
+    # Get appointments that overlap with this availability slot
+    appointments = db.query(Appointment).options(
+        joinedload(Appointment.user),
+        joinedload(Appointment.care_provider)
+    ).filter(
+        Appointment.care_provider_id == slot.care_provider.user_id,
+        Appointment.start_time < slot.end_time,
+        Appointment.end_time > slot.start_time
+    ).order_by(Appointment.start_time).all()
+
+    response = templates.TemplateResponse("admin/availability_detail.html", {
+        "request": request,
+        "session": session,
+        "slot": slot,
+        "appointments": appointments
+    })
+    return add_no_cache_headers(response)
 
 @router.get("/appointments/create", response_class=HTMLResponse)
 async def admin_appointment_create_form(
@@ -793,45 +907,29 @@ async def admin_appointment_create(
     """Create new appointment"""
     # Check authentication for API endpoints
     from app.core.admin_auth import require_admin_session
-    session = require_admin_session(request)
+    from app.services.appointment_service import (AppointmentCreate,
+                                                  AppointmentService)
 
-    form_data = await request.form()
-
-    log_admin_action(session, "CREATE_APPOINTMENT", {
-        "user_id": form_data.get("user_id"),
-        "care_provider_id": form_data.get("care_provider_id")
-    })
 
     try:
-        from datetime import datetime
 
-        # Parse form data
-        user_id = form_data.get("user_id")
-        care_provider_id = form_data.get("care_provider_id")
-        date = form_data.get("date")
-        start_time = form_data.get("start_time")
-        end_time = form_data.get("end_time")
-        meeting_link = form_data.get("meeting_link")
-        notes = form_data.get("notes")
+        session = require_admin_session(request, db)
 
-        # Combine date and time
-        start_datetime = datetime.fromisoformat(f"{date}T{start_time}")
-        end_datetime = datetime.fromisoformat(f"{date}T{end_time}")
+        form_data = await request.form()
+        
+        appointment_data = AppointmentCreate.model_validate(form_data)
 
-        # Create appointment
-        appointment = Appointment(
-            user_id=user_id,
-            care_provider_id=care_provider_id,
-            start_time=start_datetime,
-            end_time=end_datetime,
-            status=AppointmentStatus.PENDING,
-            meeting_link=meeting_link or f"https://meet.ephra.com/session-{generate_uuid()[:8]}",
-            notes=notes
-        )
+        apse = AppointmentService(db)
+        user = db.query(User).filter(User.id == session.user_id).first()
+        appointment = apse.create_appointment(appointment_data, user)
 
-        db.add(appointment)
-        db.commit()
-        db.refresh(appointment)
+
+
+        log_admin_action(session, "CREATE_APPOINTMENT", {
+            "user_id": form_data.get("user_id"),
+            "care_provider_id": form_data.get("care_provider_id")
+        })
+
 
         return RedirectResponse(
             url=f"/admin-control-panel-x7k9m2/appointments/{appointment.id}",
@@ -896,6 +994,9 @@ async def admin_delete_journal(
     db.delete(journal)
     db.commit()
 
+    # Invalidate cache after journal deletion
+    invalidate_cache()
+
     return {"success": True, "message": "Journal deleted successfully"}
 
 @router.get("/appointments/{appointment_id}", response_class=HTMLResponse)
@@ -953,6 +1054,10 @@ async def admin_update_appointment_status(
         # Update the status as string value
         appointment.status = new_status
         db.commit()
+
+        # Invalidate cache after appointment status update
+        invalidate_cache()
+
         return {"success": True, "message": f"Appointment status updated to {new_status}"}
     except Exception as e:
         return {"success": False, "message": f"Error updating status: {str(e)}"}
@@ -976,6 +1081,9 @@ async def admin_delete_appointment(
 
     db.delete(appointment)
     db.commit()
+
+    # Invalidate cache after appointment deletion
+    invalidate_cache()
 
     return {"success": True, "message": "Appointment deleted successfully"}
 
@@ -1115,6 +1223,10 @@ async def admin_toggle_availability(
     db: Session = Depends(get_db)
 ):
     """Toggle availability slot status"""
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+
     body = await request.json()
     available = body.get("available", True)
 
@@ -1130,25 +1242,10 @@ async def admin_toggle_availability(
     slot.is_available = available
     db.commit()
 
+    # Invalidate cache after availability toggle
+    invalidate_cache()
+
     return {"success": True, "message": f"Availability slot {'enabled' if available else 'disabled'}"}
-
-@router.post("/availability/{slot_id}/delete")
-async def admin_delete_availability(
-    slot_id: str,
-    request: Request,
-    db: Session = Depends(get_db)
-):
-    """Delete availability slot"""
-    log_admin_action(session, "DELETE_AVAILABILITY", {"slot_id": slot_id})
-
-    slot = db.query(Availability).filter(Availability.id == slot_id).first()
-    if not slot:
-        return {"success": False, "message": "Availability slot not found"}
-
-    db.delete(slot)
-    db.commit()
-
-    return {"success": True, "message": "Availability slot deleted successfully"}
 
 @router.post("/availability/{slot_id}/delete")
 async def admin_delete_availability(
@@ -1163,11 +1260,410 @@ async def admin_delete_availability(
 
     log_admin_action(session, "DELETE_AVAILABILITY", {"slot_id": slot_id})
 
-    slot = db.query(Availability).filter(Availability.id == slot_id).first()
+    # Check if there are any appointments in this slot before deleting
+    from app.db.models import Appointment, AppointmentStatus
+
+    slot = db.query(Availability).options(
+        joinedload(Availability.care_provider).joinedload(CareProviderProfile.user)
+    ).filter(Availability.id == slot_id).first()
+
     if not slot:
         return {"success": False, "message": "Availability slot not found"}
+
+    # Check for appointments in this time slot
+    appointment_count = db.query(Appointment).filter(
+        Appointment.care_provider_id == slot.care_provider.user_id,
+        Appointment.start_time < slot.end_time,
+        Appointment.end_time > slot.start_time,
+        Appointment.status.in_([AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED])
+    ).count()
+
+    if appointment_count > 0:
+        return {"success": False, "message": f"Cannot delete availability slot with {appointment_count} scheduled appointment(s)"}
 
     db.delete(slot)
     db.commit()
 
+    # Invalidate cache after availability deletion
+    invalidate_cache()
+
     return {"success": True, "message": "Availability slot deleted successfully"}
+
+@router.post("/availability/create-pattern")
+async def admin_create_availability_pattern(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Create availability pattern for a care provider"""
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+
+    try:
+        pattern_data = await request.json()
+        log_admin_action(session, "CREATE_AVAILABILITY_PATTERN", pattern_data)
+
+        import uuid
+        from datetime import datetime, time, timedelta
+
+        from app.db.models import Appointment, AppointmentStatus
+
+        care_provider_id = pattern_data["careProviderId"]
+        day_of_week = pattern_data["dayOfWeek"]  # 0=Monday, 6=Sunday
+        start_time_str = pattern_data["startTime"]  # "HH:MM"
+        end_time_str = pattern_data["endTime"]  # "HH:MM"
+        apply_for_month = pattern_data.get("applyForMonth", False)
+
+        # Get care provider profile
+        user = db.query(User).filter(User.id == care_provider_id).first()
+        if not user or user.role != UserRole.CARE_PROVIDER:
+            return {"success": False, "message": "Care provider not found"}
+
+        care_profile = db.query(CareProviderProfile).filter(
+            CareProviderProfile.user_id == care_provider_id
+        ).first()
+        if not care_profile:
+            return {"success": False, "message": "Care provider profile not found"}
+
+        # Parse times
+        start_hour, start_minute = map(int, start_time_str.split(':'))
+        end_hour, end_minute = map(int, end_time_str.split(':'))
+
+        created_count = 0
+        conflicts = []
+        suggested_ranges = []
+
+        # Determine date range
+        start_date = datetime.now().date()
+        if apply_for_month:
+            end_date = start_date + timedelta(days=28)  # 4 weeks
+        else:
+            end_date = start_date
+
+        # Find all dates matching the day of week
+        current_date = start_date
+        while current_date <= end_date:
+            if current_date.weekday() == day_of_week:
+                # Create datetime objects for this date
+                slot_start = datetime.combine(current_date, time(start_hour, start_minute))
+                slot_end = datetime.combine(current_date, time(end_hour, end_minute))
+
+                # Check for appointment conflicts
+                conflicting_appointments = db.query(Appointment).filter(
+                    Appointment.care_provider_id == care_provider_id,
+                    Appointment.start_time < slot_end,
+                    Appointment.end_time > slot_start,
+                    Appointment.status.in_([AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED])
+                ).all()
+
+                if conflicting_appointments:
+                    conflicts.append({
+                        "date": current_date.strftime('%Y-%m-%d'),
+                        "appointments": len(conflicting_appointments)
+                    })
+
+                    # Generate suggested ranges for today only
+                    if current_date == datetime.now().date():
+                        suggested_ranges = generate_available_ranges(
+                            db, care_provider_id, current_date, conflicting_appointments
+                        )
+                else:
+                    # Check for existing availability overlap
+                    overlapping = db.query(Availability).filter(
+                        Availability.care_provider_id == care_profile.id,
+                        Availability.start_time < slot_end,
+                        Availability.end_time > slot_start,
+                    ).first()
+
+                    if not overlapping:
+                        # Create availability slot
+                        availability = Availability(
+                            id=str(uuid.uuid4()),
+                            care_provider_id=care_profile.id,
+                            start_time=slot_start,
+                            end_time=slot_end,
+                            is_available=True
+                        )
+                        db.add(availability)
+                        created_count += 1
+
+            current_date += timedelta(days=1)
+
+        db.commit()
+
+        # Invalidate cache after availability creation
+        invalidate_cache()
+
+        if conflicts and not created_count:
+            return {
+                "success": False,
+                "message": "Cannot create availability slots due to appointment conflicts",
+                "conflicts": conflicts,
+                "suggested_ranges": suggested_ranges
+            }
+
+        return {
+            "success": True,
+            "message": f"Created {created_count} availability slots",
+            "created_count": created_count,
+            "conflicts": conflicts
+        }
+
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "message": f"Error creating availability pattern: {str(e)}"}
+
+@router.post("/availability/{slot_id}/edit")
+async def admin_edit_availability(
+    slot_id: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Edit an availability slot"""
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+
+    try:
+        update_data = await request.json()
+        log_admin_action(session, "EDIT_AVAILABILITY", {"slot_id": slot_id, "update_data": update_data})
+
+        from datetime import datetime
+
+        from app.db.models import Appointment, AppointmentStatus
+
+        # Get availability slot
+        slot = db.query(Availability).options(
+            joinedload(Availability.care_provider).joinedload(CareProviderProfile.user)
+        ).filter(Availability.id == slot_id).first()
+
+        if not slot:
+            return {"success": False, "message": "Availability slot not found"}
+
+        # Parse new times
+        new_start = datetime.fromisoformat(update_data["start_time"])
+        new_end = datetime.fromisoformat(update_data["end_time"])
+
+        if new_start >= new_end:
+            return {"success": False, "message": "Start time must be before end time"}
+
+        # Check for appointment conflicts
+        conflicting_appointments = db.query(Appointment).filter(
+            Appointment.care_provider_id == slot.care_provider.user_id,
+            Appointment.start_time < new_end,
+            Appointment.end_time > new_start,
+            Appointment.status.in_([AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED])
+        ).all()
+
+        if conflicting_appointments:
+            # Generate suggested ranges for today
+            suggested_ranges = []
+            if new_start.date() == datetime.now().date():
+                suggested_ranges = generate_available_ranges(
+                    db, slot.care_provider.user_id, new_start.date(), conflicting_appointments
+                )
+
+            return {
+                "success": False,
+                "message": f"Cannot update availability due to {len(conflicting_appointments)} appointment conflict(s)",
+                "suggested_ranges": suggested_ranges
+            }
+
+        # Check for overlapping availability slots (excluding current one)
+        overlapping = db.query(Availability).filter(
+            Availability.care_provider_id == slot.care_provider_id,
+            Availability.start_time < new_end,
+            Availability.end_time > new_start,
+            Availability.id != slot_id
+        ).first()
+
+        if overlapping:
+            return {"success": False, "message": "This time slot overlaps with an existing availability slot"}
+
+        # Update the slot
+        slot.start_time = new_start
+        slot.end_time = new_end
+        db.commit()
+
+        # Invalidate cache after availability update
+        invalidate_cache()
+
+        return {"success": True, "message": "Availability slot updated successfully"}
+
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "message": f"Error updating availability slot: {str(e)}"}
+
+def generate_available_ranges(db: Session, care_provider_id: str, date, conflicting_appointments):
+    """Generate suggested available time ranges for a given date"""
+    from datetime import datetime, time, timedelta
+
+    # Get current time + 20 minutes
+    now = datetime.now()
+    min_start_time = now + timedelta(minutes=20) if date == now.date() else datetime.combine(date, time(0, 0))
+    max_end_time = datetime.combine(date, time(23, 59))
+
+    # Get all appointments for the day
+    all_appointments = db.query(Appointment).filter(
+        Appointment.care_provider_id == care_provider_id,
+        Appointment.start_time >= datetime.combine(date, time(0, 0)),
+        Appointment.start_time < datetime.combine(date + timedelta(days=1), time(0, 0)),
+        Appointment.status.in_([AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED])
+    ).order_by(Appointment.start_time).all()
+
+    suggested_ranges = []
+
+    if not all_appointments:
+        # No appointments, suggest the whole remaining day
+        if min_start_time < max_end_time:
+            suggested_ranges.append({
+                "start": min_start_time.strftime('%H:%M'),
+                "end": max_end_time.strftime('%H:%M')
+            })
+    else:
+        # Find gaps between appointments
+        current_time = min_start_time
+
+        for appointment in all_appointments:
+            if current_time < appointment.start_time:
+                # Gap before this appointment
+                suggested_ranges.append({
+                    "start": current_time.strftime('%H:%M'),
+                    "end": appointment.start_time.strftime('%H:%M')
+                })
+            current_time = max(current_time, appointment.end_time)
+
+        # Check for time after last appointment
+        if current_time < max_end_time:
+            suggested_ranges.append({
+                "start": current_time.strftime('%H:%M'),
+                "end": max_end_time.strftime('%H:%M')
+            })
+
+    return suggested_ranges
+
+@router.get("/api/care-providers")
+async def admin_get_care_providers(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Get list of care providers for admin use"""
+    # Check authentication
+    session = get_admin_session_or_redirect(request)
+    if not session:
+        return {"success": False, "message": "Authentication required"}
+
+    try:
+        care_providers = db.query(User).filter(
+            User.role == UserRole.CARE_PROVIDER,
+            User.is_active == True
+        ).all()
+
+        provider_list = []
+        for provider in care_providers:
+            provider_list.append({
+                "id": provider.id,
+                "email": provider.email,
+                "first_name": provider.first_name,
+                "last_name": provider.last_name,
+                "name": provider.name
+            })
+
+        return {"success": True, "care_providers": provider_list}
+
+    except Exception as e:
+        return {"success": False, "message": f"Error fetching care providers: {str(e)}"}
+
+@router.post("/availability/create-single")
+async def admin_create_single_availability(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Create a single availability slot"""
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+
+    try:
+        slot_data = await request.json()
+        log_admin_action(session, "CREATE_SINGLE_AVAILABILITY", slot_data)
+
+        import uuid
+        from datetime import datetime, time
+
+        from app.db.models import Appointment, AppointmentStatus
+
+        care_provider_id = slot_data["careProviderId"]
+        date_str = slot_data["date"]  # "YYYY-MM-DD"
+        start_time_str = slot_data["startTime"]  # "HH:MM"
+        end_time_str = slot_data["endTime"]  # "HH:MM"
+
+        # Get care provider profile
+        user = db.query(User).filter(User.id == care_provider_id).first()
+        if not user or user.role != UserRole.CARE_PROVIDER:
+            return {"success": False, "message": "Care provider not found"}
+
+        care_profile = db.query(CareProviderProfile).filter(
+            CareProviderProfile.user_id == care_provider_id
+        ).first()
+        if not care_profile:
+            return {"success": False, "message": "Care provider profile not found"}
+
+        # Parse date and times
+        slot_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        start_hour, start_minute = map(int, start_time_str.split(':'))
+        end_hour, end_minute = map(int, end_time_str.split(':'))
+
+        # Create datetime objects
+        slot_start = datetime.combine(slot_date, time(start_hour, start_minute))
+        slot_end = datetime.combine(slot_date, time(end_hour, end_minute))
+
+        # Check for appointment conflicts
+        conflicting_appointments = db.query(Appointment).filter(
+            Appointment.care_provider_id == care_provider_id,
+            Appointment.start_time < slot_end,
+            Appointment.end_time > slot_start,
+            Appointment.status.in_([AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED])
+        ).all()
+
+        if conflicting_appointments:
+            # Generate suggested ranges
+            suggested_ranges = generate_available_ranges(
+                db, care_provider_id, slot_date, conflicting_appointments
+            )
+
+            return {
+                "success": False,
+                "message": f"Cannot create availability due to {len(conflicting_appointments)} appointment conflict(s)",
+                "suggested_ranges": suggested_ranges
+            }
+
+        # Check for existing availability overlap
+        overlapping = db.query(Availability).filter(
+            Availability.care_provider_id == care_profile.id,
+            Availability.start_time < slot_end,
+            Availability.end_time > slot_start,
+        ).first()
+
+        if overlapping:
+            return {"success": False, "message": "This time slot overlaps with an existing availability slot"}
+
+        # Create availability slot
+        availability = Availability(
+            id=str(uuid.uuid4()),
+            care_provider_id=care_profile.id,
+            start_time=slot_start,
+            end_time=slot_end,
+            is_available=True
+        )
+        db.add(availability)
+        db.commit()
+
+        # Invalidate cache after availability creation
+        invalidate_cache()
+
+        return {"success": True, "message": "Availability slot created successfully"}
+
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "message": f"Error creating availability slot: {str(e)}"}

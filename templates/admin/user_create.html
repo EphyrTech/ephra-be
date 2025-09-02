@@ -99,11 +99,8 @@
                                     <label for="specialty" class="form-label">Specialty</label>
                                     <select class="form-select" id="specialty" name="specialty">
                                         <option value="">Select Specialty</option>
-                                        <option value="therapist">Therapist</option>
-                                        <option value="psychiatrist">Psychiatrist</option>
-                                        <option value="counselor">Counselor</option>
-                                        <option value="psychologist">Psychologist</option>
-                                        <option value="social_worker">Social Worker</option>
+                                        <option value="mental">Mental Health</option>
+                                        <option value="physical">Physical Health</option>
                                     </select>
                                 </div>
                             </div>
@@ -128,6 +125,33 @@
                             <label for="bio" class="form-label">Bio</label>
                             <textarea class="form-control" id="bio" name="bio" rows="3"></textarea>
                         </div>
+
+                        <!-- Availability Section -->
+                        <div class="mb-4">
+                            <h6 class="text-info mb-3">Availability Schedule</h6>
+                            <div id="availabilityContainer">
+                                <div class="availability-slot mb-3 p-3 border rounded">
+                                    <div class="row">
+                                        <div class="col-md-5">
+                                            <label for="availability_start_0" class="form-label">Start Time</label>
+                                            <input type="datetime-local" class="form-control availability-start" id="availability_start_0" name="availability_start_time[]">
+                                        </div>
+                                        <div class="col-md-5">
+                                            <label for="availability_end_0" class="form-label">End Time</label>
+                                            <input type="datetime-local" class="form-control availability-end" id="availability_end_0" name="availability_end_time[]">
+                                        </div>
+                                        <div class="col-md-2 d-flex align-items-end">
+                                            <button type="button" class="btn btn-outline-danger btn-sm remove-availability" style="display: none;">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="addAvailabilitySlot">
+                                <i class="fas fa-plus"></i> Add Another Time Slot
+                            </button>
+                        </div>
                     </div>
 
                     <div class="d-grid gap-2 d-md-flex justify-content-md-end">
@@ -145,11 +169,13 @@
 
 {% block scripts %}
 <script>
+let availabilitySlotCount = 1;
+
 // Show/hide care provider fields based on role selection
 document.getElementById('role').addEventListener('change', function() {
     const careProviderFields = document.getElementById('careProviderFields');
     const specialtyField = document.getElementById('specialty');
-    
+
     if (this.value === 'care_provider') {
         careProviderFields.style.display = 'block';
         specialtyField.required = true;
@@ -158,6 +184,52 @@ document.getElementById('role').addEventListener('change', function() {
         specialtyField.required = false;
     }
 });
+
+// Add availability slot functionality
+document.getElementById('addAvailabilitySlot').addEventListener('click', function() {
+    const container = document.getElementById('availabilityContainer');
+    const newSlot = document.createElement('div');
+    newSlot.className = 'availability-slot mb-3 p-3 border rounded';
+    newSlot.innerHTML = `
+        <div class="row">
+            <div class="col-md-5">
+                <label for="availability_start_${availabilitySlotCount}" class="form-label">Start Time</label>
+                <input type="datetime-local" class="form-control availability-start" id="availability_start_${availabilitySlotCount}" name="availability_start_time[]">
+            </div>
+            <div class="col-md-5">
+                <label for="availability_end_${availabilitySlotCount}" class="form-label">End Time</label>
+                <input type="datetime-local" class="form-control availability-end" id="availability_end_${availabilitySlotCount}" name="availability_end_time[]">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="button" class="btn btn-outline-danger btn-sm remove-availability">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    container.appendChild(newSlot);
+    availabilitySlotCount++;
+
+    // Show remove buttons if more than one slot
+    updateRemoveButtons();
+});
+
+// Remove availability slot functionality
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.remove-availability')) {
+        e.target.closest('.availability-slot').remove();
+        updateRemoveButtons();
+    }
+});
+
+function updateRemoveButtons() {
+    const slots = document.querySelectorAll('.availability-slot');
+    const removeButtons = document.querySelectorAll('.remove-availability');
+
+    removeButtons.forEach(button => {
+        button.style.display = slots.length > 1 ? 'block' : 'none';
+    });
+}
 
 // Handle form submission
 document.getElementById('createUserForm').addEventListener('submit', function(e) {
@@ -173,20 +245,39 @@ document.getElementById('createUserForm').addEventListener('submit', function(e)
     // Collect form data
     const formData = new FormData(this);
     const userData = {};
-    
+
     for (let [key, value] of formData.entries()) {
-        if (value !== '') {
+        if (value !== '' && !key.includes('availability_')) {
             userData[key] = value;
         }
     }
-    
+
     // Convert hourly rate to cents if provided
     if (userData.hourly_rate) {
         userData.hourly_rate = Math.round(parseFloat(userData.hourly_rate) * 100);
     }
-    
+
     // Convert is_active to boolean
     userData.is_active = userData.is_active === 'true';
+
+    // Collect availability data if care provider
+    if (userData.role === 'care_provider') {
+        const startTimes = formData.getAll('availability_start_time[]');
+        const endTimes = formData.getAll('availability_end_time[]');
+        const availabilitySlots = [];
+
+        for (let i = 0; i < startTimes.length; i++) {
+            if (startTimes[i] && endTimes[i]) {
+                availabilitySlots.push({
+                    start_time: startTimes[i],
+                    end_time: endTimes[i],
+                    is_available: true
+                });
+            }
+        }
+
+        userData.availability_slots = availabilitySlots;
+    }
     
     // Submit the form
     fetch('/admin-control-panel-x7k9m2/users/create', {

@@ -1,4 +1,4 @@
+from app.middleware.cache import CacheMiddleware, invalidate_cache
 from app.middleware.rate_limiter import RateLimiter
-from app.middleware.cache import CacheMiddleware
 
-__all__ = ["RateLimiter", "CacheMiddleware"]
+__all__ = ["RateLimiter", "CacheMiddleware", "invalidate_cache"]

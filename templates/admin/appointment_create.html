@@ -51,22 +51,16 @@
                     </div>
 
                     <div class="row">
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="date" class="form-label">Date *</label>
-                                <input type="date" class="form-control" id="date" name="date" required>
+                                <label for="start_time" class="form-label">Start Date & Time *</label>
+                                <input type="datetime-local" class="form-control" id="start_time" name="start_time" required>
                             </div>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="start_time" class="form-label">Start Time *</label>
-                                <input type="time" class="form-control" id="start_time" name="start_time" required>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="mb-3">
-                                <label for="end_time" class="form-label">End Time *</label>
-                                <input type="time" class="form-control" id="end_time" name="end_time" required>
+                                <label for="end_time" class="form-label">End Date & Time *</label>
+                                <input type="datetime-local" class="form-control" id="end_time" name="end_time" required>
                             </div>
                         </div>
                     </div>
@@ -153,31 +147,33 @@
 
 {% block scripts %}
 <script>
-// Set minimum date to today
-document.getElementById('date').min = new Date().toISOString().split('T')[0];
+// Set minimum datetime to now
+const now = new Date();
+const minDateTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+document.getElementById('start_time').min = minDateTime;
+document.getElementById('end_time').min = minDateTime;
 
 // Auto-calculate end time when start time changes
 document.getElementById('start_time').addEventListener('change', function() {
-    const startTime = this.value;
-    if (startTime) {
-        const [hours, minutes] = startTime.split(':');
-        const startDate = new Date();
-        startDate.setHours(parseInt(hours), parseInt(minutes));
-        
+    const startDateTime = this.value;
+    if (startDateTime) {
+        const startDate = new Date(startDateTime);
+
         // Add 1 hour by default
         const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
-        const endTime = endDate.toTimeString().slice(0, 5);
-        
-        document.getElementById('end_time').value = endTime;
+        const endDateTime = new Date(endDate.getTime() - endDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+        document.getElementById('end_time').value = endDateTime;
+        document.getElementById('end_time').min = endDateTime;
     }
 });
 
 // Form validation
 document.querySelector('form').addEventListener('submit', function(e) {
-    const startTime = document.getElementById('start_time').value;
-    const endTime = document.getElementById('end_time').value;
-    
-    if (startTime && endTime && startTime >= endTime) {
+    const startDateTime = document.getElementById('start_time').value;
+    const endDateTime = document.getElementById('end_time').value;
+
+    if (startDateTime && endDateTime && new Date(startDateTime) >= new Date(endDateTime)) {
         e.preventDefault();
         alert('End time must be after start time');
         return false;

@@ -1,4 +1,7 @@
+import asyncio
+import os
 import time
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import APIRouter, FastAPI, HTTPException, Request
@@ -9,15 +12,32 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.api import (admin, admin_panel, appointments, assignments, auth,
-                     care_providers, health, journals, media, metrics,
-                     personal_journals, users, websockets)
+from alembic import command
+from alembic.config import Config
+from app.api import (
+    admin,
+    admin_panel,
+    appointments,
+    assignments,
+    auth,
+    care_providers,
+    health,
+    journals,
+    media,
+    metrics,
+    personal_journals,
+    users,
+    webhooks,
+    websockets,
+)
 from app.core.config import settings
-from app.core.error_handlers import (database_exception_handler,
-                                     general_exception_handler,
-                                     http_exception_handler,
-                                     service_exception_handler,
-                                     validation_exception_handler)
+from app.core.error_handlers import (
+    database_exception_handler,
+    general_exception_handler,
+    http_exception_handler,
+    service_exception_handler,
+    validation_exception_handler,
+)
 from app.core.logging import setup_logging
 from app.middleware import CacheMiddleware, RateLimiter
 from app.services.exceptions import ServiceException
@@ -25,10 +45,59 @@ from app.services.exceptions import ServiceException
 # Setup logging
 logger = setup_logging()
 
+
+@asynccontextmanager
+async def lifespan(app):
+    """Application lifespan manager - runs migrations on startup"""
+    logger.info("� Starting application...")
+
+    # Check if we should run migrations (can be disabled via env var)
+    run_migrations_on_startup = settings.RUN_MIGRATIONS_ON_STARTUP
+
+    if run_migrations_on_startup:
+        try:
+            logger.info("📊 Running database migrations...")
+
+            # Run migrations in a subprocess to avoid hanging issues
+            import subprocess
+            result = subprocess.run(
+                ["alembic", "upgrade", "head"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd="."
+            )
+
+            if result.returncode == 0:
+                logger.info("✅ Database migrations completed successfully")
+                if result.stdout.strip():
+                    logger.debug(f"Migration output: {result.stdout.strip()}")
+            else:
+                logger.error(f"❌ Migration failed with return code {result.returncode}")
+                if result.stderr:
+                    logger.error(f"Migration error: {result.stderr.strip()}")
+
+        except subprocess.TimeoutExpired:
+            logger.warning("⏰ Database migration timed out after 30 seconds")
+            logger.warning("You can disable migrations on startup by setting RUN_MIGRATIONS_ON_STARTUP=false")
+        except Exception as e:
+            logger.error(f"❌ Failed to run database migrations: {e}")
+            logger.warning("You can disable migrations on startup by setting RUN_MIGRATIONS_ON_STARTUP=false")
+    else:
+        logger.info("⏭️ Skipping database migrations (disabled via RUN_MIGRATIONS_ON_STARTUP=false)")
+
+    logger.info("🎉 Application startup completed")
+    yield
+    logger.info("🛑 Application shutdown")
+
+
+
+
 # Create the FastAPI app with full OpenAPI support
 # We'll control access to docs via middleware instead of disabling OpenAPI entirely
 app = FastAPI(
-    title="Mental Health API",
+    lifespan=lifespan,
+    title=f"{settings.PROJECT_NAME} API",
     description="""
     A comprehensive API for mental health applications with features including:
 
@@ -92,7 +161,7 @@ app = FastAPI(
 
 # Log CORS configuration for debugging
 logger.info(f"🌐 CORS Origins configured: {settings.CORS_ORIGINS}")
-logger.info(f"🌍 Environment: {settings.ENVIRONMENT}")
+logger.info(f"🌍 Environment: {settings.ENV}")
 
 # Configure CORS with more options
 app.add_middleware(
@@ -109,7 +178,7 @@ app.add_middleware(
 # Middleware to block documentation endpoints in production
 @app.middleware("http")
 async def block_docs_in_production(request: Request, call_next):
-    if settings.ENVIRONMENT == "production":
+    if settings.ENV == "production":
         # Block access to documentation endpoints in production
         if request.url.path in ["/docs", "/redoc", "/openapi.json"]:
             logger.warning(
@@ -122,10 +191,10 @@ async def block_docs_in_production(request: Request, call_next):
 
 
 # Log documentation access status
-if settings.ENVIRONMENT == "production":
+if settings.ENV == "production":
     logger.info("🔒 API documentation access blocked in production environment")
 else:
-    logger.info(f"📚 API documentation enabled for {settings.ENVIRONMENT} environment")
+    logger.info(f"📚 API documentation enabled for {settings.ENV} environment")
     logger.info("   - Swagger UI: /docs")
     logger.info("   - ReDoc: /redoc")
     logger.info("   - OpenAPI JSON: /openapi.json")
@@ -186,6 +255,7 @@ v1_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 v1_router.include_router(health.router, tags=["Health"])
 v1_router.include_router(metrics.router, tags=["Monitoring"])
 v1_router.include_router(websockets.router, tags=["WebSockets"])
+v1_router.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 
 # Include versioned router in the main app
 app.include_router(v1_router)
@@ -204,51 +274,7 @@ except Exception as e:
 
 @app.get("/")
 async def root():
-    return {"message": "Welcome to Mental Health API"}
-
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-# Mount static files
-try:
-    app.mount("/static", StaticFiles(directory="static"), name="static")
-except Exception as e:
-    logger.warning(
-        f"Static directory not found, skipping static files mounting: {str(e)}"
-    )
-
-
-@app.get("/")
-async def root():
-    return {"message": "Welcome to Mental Health API"}
-
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-
-@app.get("/")
-async def root():
-    return {"message": "Welcome to Mental Health API"}
-
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-
-@app.get("/")
-async def root():
-    return {"message": "Welcome to Mental Health API"}
-
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    return {"message": f"Welcome to {settings.PROJECT_NAME} API"}
 
 
 if __name__ == "__main__":

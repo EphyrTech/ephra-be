@@ -1,10 +1,25 @@
-from sqlalchemy import Boolean, Column, DateTime, Date, ForeignKey, Integer, String, Text, Enum, Numeric, JSON, UniqueConstraint
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 import enum
 import uuid
 
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+
 from app.db.database import Base
+
 
 def generate_uuid():
     return str(uuid.uuid4())
@@ -129,6 +144,13 @@ class Appointment(Base):
     notes = Column(Text)  # Session notes
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Email reminder tracking fields
+    email_message_id = Column(String, nullable=True)  # Mailgun message ID for tracking
+    email_scheduled = Column(Boolean, default=False)  # Boolean indicating if reminder email was scheduled
+    email_delivered = Column(Boolean, default=False)  # Boolean tracking if email was delivered
+    email_opened = Column(Boolean, default=False)  # Boolean tracking if email was opened
+    reminder_minutes = Column(Integer, default=15)  # Configurable reminder time in minutes
 
     # Relationships
     user = relationship("User", back_populates="appointments", foreign_keys=[user_id])

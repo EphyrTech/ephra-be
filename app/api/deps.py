@@ -3,22 +3,75 @@ from typing import Generator
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import jwt
+from jose import JWTError, jwt
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
+import pendulum
 
 from app.core.auth_middleware import AuthInfo, verify_access_token
 from app.core.config import settings
 from app.db.database import get_db
 from app.db.models import User, UserRole
 from app.schemas.auth import TokenPayload
+from app.services import logto_service
+from app.services.logto_service import (
+    LogtoService,
+    UserCreateRequest,
+    UserUpdateRequest,
+    UserGetResponse
+)
 
 logger = logging.getLogger(__name__)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/token")
 
 
-def get_current_user_from_auth(
+async def create_logto_user_for_existing_user(user: User, db: Session) -> bool:
+    """
+    Create a LogTo user for an existing local user.
+    This is useful when you have a user in your local database but they don't exist in LogTo yet.
+
+    Args:
+        user: The local User object
+        db: Database session
+
+    Returns:
+        bool: True if LogTo user was created successfully, False otherwise
+    """
+    try:
+        logto_service = LogtoService(db=db)
+
+        logto_user = UserCreateRequest(
+            primaryEmail=user.email,
+            name=f"{user.first_name or ''} {user.last_name or ''}".strip(),
+        )
+
+        # Add custom data with local user info
+        logto_user.customData = {
+            "localUserId": user.id,
+            "createdFromLocal": True,
+            "syncedAt": pendulum.now().to_iso8601_string()
+        }
+
+        # Create user in LogTo
+        created_user = await logto_service.create_logto_user(logto_user)
+
+        if created_user:
+            # Update local user with LogTo ID
+            user.logto_user_id = created_user.id
+            db.commit()
+            logger.info(f"Successfully created LogTo user {created_user.id} for local user {user.id}")
+            return True
+        else:
+            logger.error(f"Failed to create LogTo user for local user {user.id}")
+            return False
+
+    except Exception as e:
+        logger.error(f"Error creating LogTo user for existing user {user.id}: {e}")
+        return False
+
+
+async def get_current_user_from_auth(
     auth: AuthInfo = Depends(verify_access_token), db: Session = Depends(get_db)
 ) -> User:
     """

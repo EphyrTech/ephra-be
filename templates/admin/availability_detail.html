@@ -1,0 +1,364 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Availability Slot Details{% endblock %}
+{% block page_title %}Availability Slot Details{% endblock %}
+
+{% block page_actions %}
+<div class="btn-group">
+    <a href="/admin-control-panel-x7k9m2/availability" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Back to Availability
+    </a>
+    <button onclick="toggleEditMode()" class="btn btn-warning" id="editBtn">
+        <i class="fas fa-edit"></i> Edit Slot
+    </button>
+    {% if appointments|length == 0 %}
+    <button onclick="deleteAvailability('{{ slot.id }}')" class="btn btn-danger">
+        <i class="fas fa-trash"></i> Delete Slot
+    </button>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Availability Slot Info -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-primary">Slot Information</h6>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-sm-4"><strong>Slot ID:</strong></div>
+                    <div class="col-sm-8">
+                        <small class="text-muted">{{ slot.id }}</small>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-sm-4"><strong>Date:</strong></div>
+                    <div class="col-sm-8">{{ slot.start_time.strftime('%Y-%m-%d') }}</div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-sm-4"><strong>Time:</strong></div>
+                    <div class="col-sm-8">
+                        <span class="badge bg-info" id="timeDisplay">
+                            {{ slot.start_time.strftime('%H:%M') }} - {{ slot.end_time.strftime('%H:%M') }}
+                        </span>
+                        <!-- Edit form (hidden by default) -->
+                        <div id="timeEditForm" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="editStartTime" class="form-label">Start Time</label>
+                                    <input type="time" class="form-control" id="editStartTime"
+                                           value="{{ slot.start_time.strftime('%H:%M') }}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="editEndTime" class="form-label">End Time</label>
+                                    <input type="time" class="form-control" id="editEndTime"
+                                           value="{{ slot.end_time.strftime('%H:%M') }}">
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                <button onclick="saveTimeChanges()" class="btn btn-sm btn-success">
+                                    <i class="fas fa-save"></i> Save
+                                </button>
+                                <button onclick="cancelEdit()" class="btn btn-sm btn-secondary">
+                                    <i class="fas fa-times"></i> Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-sm-4"><strong>Duration:</strong></div>
+                    <div class="col-sm-8">
+                        {% set duration = (slot.end_time - slot.start_time).total_seconds() / 60 %}
+                        <span class="badge bg-secondary">{{ duration|int }} minutes</span>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-sm-4"><strong>Status:</strong></div>
+                    <div class="col-sm-8">
+                        {% if slot.is_available %}
+                            <span class="badge bg-success">Available</span>
+                        {% else %}
+                            <span class="badge bg-danger">Unavailable</span>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-sm-4"><strong>Created:</strong></div>
+                    <div class="col-sm-8">{{ slot.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Care Provider Info -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-primary">Care Provider Information</h6>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-sm-4"><strong>Name:</strong></div>
+                    <div class="col-sm-8">
+                        {% if slot.care_provider.user.first_name or slot.care_provider.user.last_name %}
+                            {{ slot.care_provider.user.first_name }} {{ slot.care_provider.user.last_name }}
+                        {% else %}
+                            {{ slot.care_provider.user.name or slot.care_provider.user.email }}
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-sm-4"><strong>Email:</strong></div>
+                    <div class="col-sm-8">
+                        <a href="mailto:{{ slot.care_provider.user.email }}">{{ slot.care_provider.user.email }}</a>
+                    </div>
+                </div>
+                
+                {% if slot.care_provider.user.phone_number %}
+                <div class="row mb-3">
+                    <div class="col-sm-4"><strong>Phone:</strong></div>
+                    <div class="col-sm-8">{{ slot.care_provider.user.phone_number }}</div>
+                </div>
+                {% endif %}
+                
+                <div class="row mb-3">
+                    <div class="col-sm-4"><strong>Specialty:</strong></div>
+                    <div class="col-sm-8">
+                        <span class="badge bg-info">{{ slot.care_provider.specialty.value|title }}</span>
+                    </div>
+                </div>
+                
+                {% if slot.care_provider.license_number %}
+                <div class="row mb-3">
+                    <div class="col-sm-4"><strong>License:</strong></div>
+                    <div class="col-sm-8">{{ slot.care_provider.license_number }}</div>
+                </div>
+                {% endif %}
+                
+                {% if slot.care_provider.hourly_rate %}
+                <div class="row mb-3">
+                    <div class="col-sm-4"><strong>Rate:</strong></div>
+                    <div class="col-sm-8">${{ "%.2f"|format(slot.care_provider.hourly_rate / 100) }}/hour</div>
+                </div>
+                {% endif %}
+                
+                <div class="row mb-3">
+                    <div class="col-sm-4"><strong>Actions:</strong></div>
+                    <div class="col-sm-8">
+                        <a href="/admin-control-panel-x7k9m2/users/{{ slot.care_provider.user.id }}" 
+                           class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-user"></i> View Profile
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Appointments in this time slot -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-primary">
+                    Appointments in this Time Slot ({{ appointments|length }})
+                </h6>
+            </div>
+            <div class="card-body">
+                {% if appointments %}
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Patient</th>
+                                <th>Date & Time</th>
+                                <th>Duration</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for appointment in appointments %}
+                            <tr>
+                                <td>
+                                    <strong>
+                                        {% if appointment.user.first_name or appointment.user.last_name %}
+                                            {{ appointment.user.first_name }} {{ appointment.user.last_name }}
+                                        {% else %}
+                                            {{ appointment.user.name or appointment.user.email }}
+                                        {% endif %}
+                                    </strong>
+                                    <br><small class="text-muted">{{ appointment.user.email }}</small>
+                                </td>
+                                <td>
+                                    <strong>{{ appointment.start_time.strftime('%Y-%m-%d') }}</strong><br>
+                                    <span class="badge bg-info">
+                                        {{ appointment.start_time.strftime('%H:%M') }} - {{ appointment.end_time.strftime('%H:%M') }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% set duration = (appointment.end_time - appointment.start_time).total_seconds() / 60 %}
+                                    <span class="badge bg-secondary">{{ duration|int }} min</span>
+                                </td>
+                                <td>
+                                    {% if appointment.status.value == 'pending' %}
+                                        <span class="badge bg-warning">Pending</span>
+                                    {% elif appointment.status.value == 'confirmed' %}
+                                        <span class="badge bg-success">Confirmed</span>
+                                    {% elif appointment.status.value == 'cancelled' %}
+                                        <span class="badge bg-danger">Cancelled</span>
+                                    {% elif appointment.status.value == 'completed' %}
+                                        <span class="badge bg-primary">Completed</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="/admin-control-panel-x7k9m2/appointments/{{ appointment.id }}" 
+                                       class="btn btn-sm btn-outline-primary" title="View">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="fas fa-calendar-times fa-3x text-muted mb-3"></i>
+                    <h5 class="text-muted">No appointments scheduled</h5>
+                    <p class="text-muted">This availability slot has no appointments scheduled.</p>
+                    {% if slot.appointment_count == 0 %}
+                    <p class="text-info">
+                        <i class="fas fa-info-circle"></i> 
+                        Since there are no appointments, this slot can be safely deleted.
+                    </p>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let isEditMode = false;
+
+function toggleEditMode() {
+    const editBtn = document.getElementById('editBtn');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const timeEditForm = document.getElementById('timeEditForm');
+
+    if (!isEditMode) {
+        // Enter edit mode
+        timeDisplay.style.display = 'none';
+        timeEditForm.style.display = 'block';
+        editBtn.innerHTML = '<i class="fas fa-times"></i> Cancel Edit';
+        editBtn.className = 'btn btn-secondary';
+        isEditMode = true;
+    } else {
+        // Exit edit mode
+        cancelEdit();
+    }
+}
+
+function cancelEdit() {
+    const editBtn = document.getElementById('editBtn');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const timeEditForm = document.getElementById('timeEditForm');
+
+    timeDisplay.style.display = 'inline';
+    timeEditForm.style.display = 'none';
+    editBtn.innerHTML = '<i class="fas fa-edit"></i> Edit Slot';
+    editBtn.className = 'btn btn-warning';
+    isEditMode = false;
+
+    // Reset form values
+    document.getElementById('editStartTime').value = '{{ slot.start_time.strftime('%H:%M') }}';
+    document.getElementById('editEndTime').value = '{{ slot.end_time.strftime('%H:%M') }}';
+}
+
+function saveTimeChanges() {
+    const startTime = document.getElementById('editStartTime').value;
+    const endTime = document.getElementById('editEndTime').value;
+    const slotDate = '{{ slot.start_time.strftime('%Y-%m-%d') }}';
+
+    if (startTime >= endTime) {
+        alert('Start time must be before end time');
+        return;
+    }
+
+    const updateData = {
+        start_time: `${slotDate}T${startTime}:00`,
+        end_time: `${slotDate}T${endTime}:00`
+    };
+
+    fetch(`/admin-control-panel-x7k9m2/availability/{{ slot.id }}/edit`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(updateData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Availability slot updated successfully!');
+            location.reload();
+        } else {
+            if (data.suggested_ranges) {
+                let message = `Error: ${data.message}\n\nSuggested available time ranges for today:\n`;
+                data.suggested_ranges.forEach(range => {
+                    message += `${range.start} - ${range.end}\n`;
+                });
+                alert(message);
+            } else {
+                alert('Error: ' + data.message);
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while updating the availability slot');
+    });
+}
+
+function deleteAvailability(slotId) {
+    if (confirm('Are you sure you want to delete this availability slot? This action cannot be undone.')) {
+        fetch(`/admin-control-panel-x7k9m2/availability/${slotId}/delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Availability slot deleted successfully!');
+                window.location.href = '/admin-control-panel-x7k9m2/availability';
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred');
+        });
+    }
+}
+</script>
+{% endblock %}

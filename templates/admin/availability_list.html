@@ -3,6 +3,14 @@
 {% block title %}Availability Management{% endblock %}
 {% block page_title %}Availability Management{% endblock %}
 
+{% block page_actions %}
+<div class="btn-group">
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createAvailabilityModal">
+        <i class="fas fa-plus"></i> Create Single Slot
+    </button>
+</div>
+{% endblock %}
+
 {% block content %}
 <div class="card">
     <div class="card-header">
@@ -20,6 +28,7 @@
                         <th>Date</th>
                         <th>Time Slot</th>
                         <th>Duration</th>
+                        <th>Meetings</th>
                         <th>Available</th>
                         <th>Created</th>
                         <th>Actions</th>
@@ -32,8 +41,12 @@
                             <small class="text-muted">{{ slot.id[:8] }}...</small>
                         </td>
                         <td>
-                            <strong>{{ slot.care_provider.name or slot.care_provider.email }}</strong>
-                            <br><small class="text-muted">{{ slot.care_provider.email }}</small>
+                            {% if slot.care_provider.user.first_name or slot.care_provider.user.last_name %}
+                                <strong>{{ slot.care_provider.user.first_name }} {{ slot.care_provider.user.last_name }}</strong>
+                            {% else %}
+                                <strong>{{ slot.care_provider.user.name or slot.care_provider.user.email }}</strong>
+                            {% endif %}
+                            <br><small class="text-muted">{{ slot.care_provider.user.email }}</small>
                         </td>
                         <td>
                             <strong>{{ slot.start_time.strftime('%Y-%m-%d') }}</strong>
@@ -48,6 +61,13 @@
                             <span class="badge bg-secondary">{{ duration|int }} min</span>
                         </td>
                         <td>
+                            {% if slot.appointment_count > 0 %}
+                                <span class="badge bg-info">{{ slot.appointment_count }} meeting{{ 's' if slot.appointment_count != 1 else '' }}</span>
+                            {% else %}
+                                <span class="badge bg-light text-dark">No meetings</span>
+                            {% endif %}
+                        </td>
+                        <td>
                             {% if slot.is_available %}
                                 <span class="badge bg-success">Available</span>
                             {% else %}
@@ -59,25 +79,27 @@
                         </td>
                         <td>
                             <div class="btn-group btn-group-sm">
-                                <a href="/admin-control-panel-x7k9m2/availability/{{ slot.id }}" 
+                                <a href="/admin-control-panel-x7k9m2/availability/{{ slot.id }}"
                                    class="btn btn-outline-primary btn-action" title="View">
                                     <i class="fas fa-eye"></i>
                                 </a>
                                 {% if slot.is_available %}
-                                <button onclick="toggleAvailability('{{ slot.id }}', false)" 
+                                <button onclick="toggleAvailability('{{ slot.id }}', false)"
                                         class="btn btn-outline-warning btn-action" title="Mark Unavailable">
                                     <i class="fas fa-ban"></i>
                                 </button>
                                 {% else %}
-                                <button onclick="toggleAvailability('{{ slot.id }}', true)" 
+                                <button onclick="toggleAvailability('{{ slot.id }}', true)"
                                         class="btn btn-outline-success btn-action" title="Mark Available">
                                     <i class="fas fa-check"></i>
                                 </button>
                                 {% endif %}
-                                <button onclick="deleteAvailability('{{ slot.id }}')" 
+                                {% if slot.appointment_count == 0 %}
+                                <button onclick="deleteAvailability('{{ slot.id }}')"
                                         class="btn btn-outline-danger btn-action" title="Delete">
                                     <i class="fas fa-trash"></i>
                                 </button>
+                                {% endif %}
                             </div>
                         </td>
                     </tr>
@@ -126,10 +148,149 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Create Availability Modal -->
+<div class="modal fade" id="createAvailabilityModal" tabindex="-1" aria-labelledby="createAvailabilityModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createAvailabilityModalLabel">Create Availability Slot</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="createAvailabilityForm">
+                    <div class="mb-3">
+                        <label for="careProviderSelect" class="form-label">Care Provider</label>
+                        <select class="form-select" id="careProviderSelect" name="careProviderId" required>
+                            <option value="">Select Care Provider</option>
+                            <!-- Will be populated by JavaScript -->
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="availabilityDate" class="form-label">Date</label>
+                        <input type="date" class="form-control" id="availabilityDate" name="date" required>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="availabilityStartTime" class="form-label">Start Time</label>
+                                <input type="time" class="form-control" id="availabilityStartTime" name="startTime" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="availabilityEndTime" class="form-label">End Time</label>
+                                <input type="time" class="form-control" id="availabilityEndTime" name="endTime" required>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="createSingleAvailability()">
+                    <i class="fas fa-plus"></i> Create Slot
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+// Load care providers when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadCareProviders();
+
+    // Set minimum date to today
+    const dateInput = document.getElementById('availabilityDate');
+    if (dateInput) {
+        const today = new Date().toISOString().split('T')[0];
+        dateInput.min = today;
+        dateInput.value = today;
+    }
+});
+
+function loadCareProviders() {
+    fetch('/admin-control-panel-x7k9m2/api/care-providers', {
+        method: 'GET',
+        credentials: 'include'
+    })
+    .then(response => response.json())
+    .then(data => {
+        const select = document.getElementById('careProviderSelect');
+        select.innerHTML = '<option value="">Select Care Provider</option>';
+
+        if (data.success && data.care_providers) {
+            data.care_providers.forEach(provider => {
+                const option = document.createElement('option');
+                option.value = provider.id;
+                option.textContent = `${provider.first_name || ''} ${provider.last_name || ''} (${provider.email})`.trim();
+                select.appendChild(option);
+            });
+        }
+    })
+    .catch(error => {
+        console.error('Error loading care providers:', error);
+    });
+}
+
+function createSingleAvailability() {
+    const form = document.getElementById('createAvailabilityForm');
+    const formData = new FormData(form);
+
+    const availabilityData = {
+        careProviderId: formData.get('careProviderId'),
+        date: formData.get('date'),
+        startTime: formData.get('startTime'),
+        endTime: formData.get('endTime')
+    };
+
+    // Validate
+    if (!availabilityData.careProviderId) {
+        alert('Please select a care provider');
+        return;
+    }
+
+    if (availabilityData.startTime >= availabilityData.endTime) {
+        alert('Start time must be before end time');
+        return;
+    }
+
+    fetch('/admin-control-panel-x7k9m2/availability/create-single', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(availabilityData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Availability slot created successfully!');
+            location.reload();
+        } else {
+            if (data.suggested_ranges) {
+                let message = `Error: ${data.message}\n\nSuggested available time ranges:\n`;
+                data.suggested_ranges.forEach(range => {
+                    message += `${range.start} - ${range.end}\n`;
+                });
+                alert(message);
+            } else {
+                alert('Error: ' + data.message);
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while creating availability slot');
+    });
+}
+
 function toggleAvailability(slotId, makeAvailable) {
     const action = makeAvailable ? 'make available' : 'mark as unavailable';
     if (confirm(`Are you sure you want to ${action} this time slot?`)) {

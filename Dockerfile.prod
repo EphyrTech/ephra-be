@@ -19,11 +19,9 @@ RUN apt-get update && apt-get install -y \
 # Install uv
 RUN pip install uv
 
-# Copy requirements file
-COPY requirements.txt .
 
 # Install Python dependencies using uv
-RUN uv pip install --system -r requirements.txt
+RUN uv sync --frozen --no-dev
 
 # Create necessary directories
 RUN mkdir -p uploads logs static

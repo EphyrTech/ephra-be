@@ -1,11 +1,16 @@
 FROM python:3.12-slim
 
+
+
 WORKDIR /app
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    ENVIRONMENT=production
+    ENVIRONMENT=production \
+    UV_PROJECT_ENVIRONMENT=/usr/local \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -26,9 +31,9 @@ RUN --mount=type=ssh \
     --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --frozen --no-dev
+    uv sync --frozen --no-install-project --no-dev
 
-
+ENV PATH="/.venv/bin:$PATH"
 
 # Create necessary directories
 RUN mkdir -p uploads logs static

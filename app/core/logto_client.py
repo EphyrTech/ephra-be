@@ -16,7 +16,7 @@ def get_logto_config() -> dict:
     """
     return {
         "endpoint": settings.LOGTO_ENDPOINT,
-        "appId": settings.LOGTO_APP_ID,
+        "appId": "wjo2r2owk584w5j600mpb",
         # Note: Redirect URIs are handled dynamically by the frontend
         # The backend only validates JWT tokens, not redirect flows
     }

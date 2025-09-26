@@ -1,8 +1,8 @@
 import os
 from typing import List, Union
 
-from pydantic_settings import BaseSettings
 from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -44,14 +44,18 @@ class Settings(BaseSettings):
 
 
     # Logto Configuration
-    LOGTO_ENDPOINT: str = Field(default="", alias="LOGTO_ENDPOINT")
-    LOGTO_APP_ID: str = Field(default="", alias="LOGTO_APP_ID")
-    LOGTO_APP_SECRET: str = Field(default="", alias="LOGTO_APP_SECRET")
-    LOGTO_MANAGEMENT_APP_ID: str = Field(default="", alias="LOGTO_MANAGEMENT_APP_ID")
-    LOGTO_MANAGEMENT_APP_SECRET: str = Field(default="", alias="LOGTO_MANAGEMENT_APP_SECRET")
+    LOGTO_ENDPOINT: str = Field(default="", alias="LOGTO_ENDPOINT", description="url of logto server")
+    LOGTO_FE_APP_ID: str = Field(default="", alias="LOGTO_FE_APP_ID", description="id of the FE SPA app")
+    LOGTO_APP_ID: str = Field(default="", alias="LOGTO_APP_ID", description="M2M App ID")
+    LOGTO_APP_SECRET: str = Field(default="", alias="LOGTO_APP_SECRET", description="M2M App Secret")
+
+    # Logto RBAC Configuration
+    LOGTO_API_RESOURCE: str = Field(default="https://127.0.0.1:3000", alias="LOGTO_API_RESOURCE", description="API identifier")
 
     # Note: Redirect URIs are now handled dynamically by the frontend
     # The backend only validates JWT tokens and doesn't need static redirect URIs
+    LOGTO_REDIRECT_URI: str = Field(default="", alias="LOGTO_REDIRECT_URI")
+    LOGTO_POST_LOGOUT_REDIRECT_URI: str = Field(default="", alias="LOGTO_POST_LOGOUT_REDIRECT_URI")
 
     # File Storage
     UPLOAD_DIRECTORY: str = Field(default="uploads", alias="UPLOAD_DIRECTORY")

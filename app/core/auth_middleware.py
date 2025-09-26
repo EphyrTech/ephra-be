@@ -2,53 +2,55 @@
 FastAPI authentication middleware for Logto JWT validation.
 Based on the official Logto FastAPI integration guide.
 """
-from typing import Dict, Any, List, Optional
-import jwt
-from jwt import PyJWKClient
-from fastapi import HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import logging
+from typing import Any, Dict
+
+import jwt
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jwt import PyJWKClient
+from app.db.database import get_db
+from app.schemas.auth import AuthInfo
+
+from app.services.logto_service import LogtoManagerService
+from app.core.rbac import RoleScopes
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Validate Logto configuration
+def validate_logto_config():
+    """Validate that required Logto configuration is present."""
+    missing_configs = []
+
+    if not settings.LOGTO_ENDPOINT:
+        missing_configs.append("LOGTO_ENDPOINT")
+    if not settings.LOGTO_APP_ID:
+        missing_configs.append("LOGTO_APP_ID")
+    if not settings.LOGTO_API_RESOURCE:
+        missing_configs.append("LOGTO_API_RESOURCE")
+
+    if missing_configs:
+        logger.error(f"Missing required Logto configuration: {', '.join(missing_configs)}")
+        return False
+
+    logger.info(f"Logto configuration validated - App ID: {settings.LOGTO_APP_ID}, API Resource: {settings.LOGTO_API_RESOURCE}")
+    return True
+
 # Initialize JWKS client for JWT validation
 jwks_client = None
-if settings.LOGTO_ENDPOINT:
+if settings.LOGTO_ENDPOINT and validate_logto_config():
     # Remove trailing slash to avoid double slashes
     endpoint = settings.LOGTO_ENDPOINT.rstrip('/')
     JWKS_URI = f'{endpoint}/oidc/jwks'
     ISSUER = f'{endpoint}/oidc'
     jwks_client = PyJWKClient(JWKS_URI)
+    logger.info(f"Initialized JWKS client for endpoint: {endpoint}")
+else:
+    logger.warning("Logto authentication is not properly configured - JWT validation will fail")
 
 security = HTTPBearer()
-
-
-class AuthInfo:
-    """Authentication information extracted from JWT token."""
-
-    def __init__(self, sub: str, client_id: str = None, organization_id: str = None,
-                 scopes: List[str] = None, audience: List[str] = None,
-                 email: str = None, name: str = None, given_name: str = None):
-        self.sub = sub
-        self.client_id = client_id
-        self.organization_id = organization_id
-        self.scopes = scopes or []
-        self.audience = audience or []
-        self.email = email
-        self.name = name
-        self.given_name = given_name
-
-    def to_dict(self):
-        return {
-            'sub': self.sub,
-            'client_id': self.client_id,
-            'organization_id': self.organization_id,
-            'scopes': self.scopes,
-            'audience': self.audience
-        }
-
 
 class AuthorizationError(Exception):
     """Custom exception for authorization errors."""
@@ -85,42 +87,58 @@ def validate_jwt(token: str) -> Dict[str, Any]:
 
 def create_auth_info(payload: Dict[str, Any]) -> AuthInfo:
     """Create AuthInfo from JWT payload."""
-    scopes = payload.get('scope', '').split(' ') if payload.get('scope') else []
+    # Extract and clean scopes
+    scope_string = payload.get('scope', '')
+    if scope_string:
+        # Split by space and filter out empty strings
+        scopes = [scope.strip() for scope in scope_string.split(' ') if scope.strip()]
+    else:
+        scopes = []
+
+    # Handle audience field
     audience = payload.get('aud', [])
     if isinstance(audience, str):
         audience = [audience]
 
-    return AuthInfo(
-        sub=payload.get('sub'),
+    # Validate required subject field
+    sub = payload.get('sub')
+    if not sub:
+        raise AuthorizationError('Token missing subject (sub) claim')
+
+    auth_info = AuthInfo(
+        sub=sub,
         client_id=payload.get('client_id'),
         organization_id=payload.get('organization_id'),
         scopes=scopes,
-        audience=audience,
-        email=payload.get('email'),
-        name=payload.get('name'),
-        given_name=payload.get('given_name')
+        audience=audience
     )
+
+    if not auth_info.has_any_scope(RoleScopes.ADMIN):
+        raise AuthorizationError('User does not have required scopes', 403)
+
+    return auth_info
 
 
 def verify_payload(payload: Dict[str, Any]) -> None:
     """Verify payload based on permission model."""
-    # For now, we'll implement basic validation
-    # This can be extended based on your specific permission model
-    
-    # Check if token has required audience (if configured)
-    if hasattr(settings, 'LOGTO_API_RESOURCE') and settings.LOGTO_API_RESOURCE:
-        audiences = payload.get('aud', [])
-        if isinstance(audiences, str):
-            audiences = [audiences]
-        
-        if settings.LOGTO_API_RESOURCE not in audiences:
-            raise AuthorizationError('Invalid audience')
-    
-    # Additional validation can be added here based on your needs
-    logger.debug(f"Token validated for subject: {payload.get('sub')}")
+    # Validate required fields
+    if not payload.get('sub'):
+        raise AuthorizationError('Token missing subject (sub) claim')
 
 
-async def verify_access_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> AuthInfo:
+    # Check if token has required audience (API resource)
+    audiences = payload.get('aud', [])
+    if isinstance(audiences, str):
+        audiences = [audiences]
+
+    if settings.LOGTO_API_RESOURCE not in audiences:
+        raise AuthorizationError(f'Invalid audience. Expected: {settings.LOGTO_API_RESOURCE}')
+    
+    logger.debug(f"Token validated for subject: {payload.get('sub')} with scopes: {payload.get('scope', 'none')} from client: {payload.get('client_id')}")
+
+
+
+async def verify_access_token(db = Depends(get_db),credentials: HTTPAuthorizationCredentials = Depends(security)) -> AuthInfo:
     """Verify access token and return authentication info."""
     try:
         token = credentials.credentials

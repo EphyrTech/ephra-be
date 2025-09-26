@@ -1,12 +1,14 @@
 from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
 
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app.api.rbac_deps import require_admin_access, require_manage_all_users
+from app.core.auth_middleware import AuthInfo
 from app.db.database import get_db
-from app.db.models import User, UserRole, SpecialistType
+from app.db.models import SpecialistType, User, UserRole
 from app.schemas.user import User as UserSchema
-from app.api.role_deps import require_admin, require_care_or_admin
 
 router = APIRouter()
 
@@ -26,11 +28,11 @@ class UserRoleUpdate(BaseModel):
 def get_all_users(
     skip: int = 0,
     limit: int = 100,
-    current_user: User = Depends(require_admin),
+    auth: AuthInfo = Depends(require_manage_all_users),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Get all users. Admin only.
+    Get all users. Requires 'manage:all-users' scope.
     """
     users = db.query(User).offset(skip).limit(limit).all()
     return users
@@ -40,11 +42,11 @@ def get_all_users(
 def assign_user_role(
     user_id: str,
     role_update: UserRoleUpdate,
-    current_user: User = Depends(require_admin),
+    auth: AuthInfo = Depends(require_manage_all_users),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Assign role to a user. Admin only.
+    Assign role to a user. Requires 'manage:all-users' scope.
     Only admins can assign 'care' role.
     """
     user = db.query(User).filter(User.id == user_id).first()
@@ -80,11 +82,11 @@ def get_care_providers_admin(
     specialty: str = None,
     skip: int = 0,
     limit: int = 100,
-    current_user: User = Depends(require_admin),
+    auth: AuthInfo = Depends(require_manage_all_users),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Get all care providers with their details. Admin only.
+    Get all care providers with their details. Requires 'manage:all-users' scope.
     """
     query = db.query(User).filter(User.role == UserRole.CARE, User.is_active == True)
 
@@ -117,11 +119,11 @@ def get_care_providers_admin(
 @router.delete("/users/{user_id}")
 def deactivate_user(
     user_id: str,
-    current_user: User = Depends(require_admin),
+    auth: AuthInfo = Depends(require_manage_all_users),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Deactivate a user account (set is_active to False). Admin only.
+    Deactivate a user account (set is_active to False). Requires 'manage:all-users' scope.
     """
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -130,7 +132,7 @@ def deactivate_user(
             detail="User not found"
         )
 
-    if user.id == current_user.id:
+    if user.id == auth.sub:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot deactivate your own account"
@@ -146,11 +148,11 @@ def deactivate_user(
 @router.put("/users/{user_id}/activate")
 def activate_user(
     user_id: str,
-    current_user: User = Depends(require_admin),
+    auth: AuthInfo = Depends(require_manage_all_users),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Activate a user account (set is_active to True). Admin only.
+    Activate a user account (set is_active to True). Requires 'manage:all-users' scope.
     """
     user = db.query(User).filter(User.id == user_id).first()
     if not user:

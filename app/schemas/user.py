@@ -20,7 +20,7 @@ def validate_email_field(email: str) -> str:
         return email
 
     # In development, allow .local domains (common with Logto test environments)
-    if settings.ENVIRONMENT == "development" and email.endswith("@logto.local"):
+    if settings.ENV == "development" and email.endswith("@logto.local"):
         # Convert .local emails to a valid domain for development
         username = email.split("@")[0]
         return f"{username}@ephyrtech.com"
@@ -32,7 +32,7 @@ def validate_email_field(email: str) -> str:
         return email
 
     # If email format is invalid
-    if settings.ENVIRONMENT == "development":
+    if settings.ENV == "development":
         # In development mode, create a fallback
         username_part = re.sub(r'[^a-zA-Z0-9_.-]', '', email.split("@")[0] if "@" in email else email)
         return f"{username_part}@ephyrtech.com"

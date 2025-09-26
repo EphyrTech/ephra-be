@@ -6,17 +6,23 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_from_auth
-from app.api.role_deps import require_care_or_admin
+from app.api.rbac_deps import (
+    require_care_provider_or_admin,
+    require_manage_availability,
+    require_view_care_dashboard,
+)
+from app.core.auth_middleware import AuthInfo, verify_access_token
 from app.db.database import get_db
 from app.db.models import SpecialistType, User
 from app.schemas.care_provider import Availability as AvailabilitySchema
-from app.schemas.care_provider import AvailabilityCreate, AvailabilityUpdate
-from app.schemas.care_provider import CareProviderProfile as CareProviderProfileSchema
 from app.schemas.care_provider import (
+    AvailabilityCreate,
+    AvailabilityUpdate,
     CareProviderProfileCreate,
     CareProviderProfileUpdate,
     CareProviderWithUser,
 )
+from app.schemas.care_provider import CareProviderProfile as CareProviderProfileSchema
 from app.services.care_provider_service import CareProviderService
 from app.services.exceptions import (
     BusinessRuleError,
@@ -72,11 +78,12 @@ def get_care_providers(
 
 @router.get("/me", response_model=CareProviderProfileSchema)
 def get_my_profile(
-    current_user: User = Depends(require_care_or_admin),
+    auth: AuthInfo = Depends(require_view_care_dashboard),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Get current care provider's profile.
+    Get current care provider's profile. Requires 'view:care-dashboard' scope.
     """
     try:
         service = CareProviderService(db)
@@ -90,11 +97,12 @@ def get_my_profile(
 )
 def create_my_profile(
     profile_in: CareProviderProfileCreate,
-    current_user: User = Depends(require_care_or_admin),
+    auth: AuthInfo = Depends(require_view_care_dashboard),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Create care provider profile for current user.
+    Create care provider profile for current user. Requires 'view:care-dashboard' scope.
     """
     try:
         service = CareProviderService(db)
@@ -106,11 +114,12 @@ def create_my_profile(
 @router.put("/me", response_model=CareProviderProfileSchema)
 def update_my_profile(
     profile_in: CareProviderProfileUpdate,
-    current_user: User = Depends(require_care_or_admin),
+    auth: AuthInfo = Depends(require_view_care_dashboard),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Update current care provider's profile.
+    Update current care provider's profile. Requires 'view:care-dashboard' scope.
     """
     try:
         service = CareProviderService(db)
@@ -140,11 +149,12 @@ def get_care_provider(
 
 @router.get("/me/availability", response_model=List[AvailabilitySchema])
 def get_my_availability(
-    current_user: User = Depends(require_care_or_admin),
+    auth: AuthInfo = Depends(require_manage_availability),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Get current care provider's availability slots.
+    Get current care provider's availability slots. Requires 'manage:availability' scope.
     """
     try:
         service = CareProviderService(db)
@@ -160,11 +170,12 @@ def get_my_availability(
 )
 def create_my_availability(
     availability_in: AvailabilityCreate,
-    current_user: User = Depends(require_care_or_admin),
+    auth: AuthInfo = Depends(require_manage_availability),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Create a new availability slot for current care provider.
+    Create a new availability slot for current care provider. Requires 'manage:availability' scope.
     """
     try:
         service = CareProviderService(db)
@@ -177,11 +188,12 @@ def create_my_availability(
 def update_my_availability(
     availability_id: str,
     availability_in: AvailabilityUpdate,
-    current_user: User = Depends(require_care_or_admin),
+    auth: AuthInfo = Depends(require_manage_availability),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Update an availability slot for current care provider.
+    Update an availability slot for current care provider. Requires 'manage:availability' scope.
     """
     try:
         service = CareProviderService(db)
@@ -197,11 +209,12 @@ def update_my_availability(
 )
 def delete_my_availability(
     availability_id: str,
-    current_user: User = Depends(require_care_or_admin),
+    auth: AuthInfo = Depends(require_manage_availability),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> None:
     """
-    Delete an availability slot for current care provider.
+    Delete an availability slot for current care provider. Requires 'manage:availability' scope.
     """
     try:
         service = CareProviderService(db)

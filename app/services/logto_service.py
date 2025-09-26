@@ -1,22 +1,22 @@
 """
 Logto authentication service for user management and synchronization.
 """
-import asyncio
+
+from csv import Error
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, TypeVar, Type
 from pydantic import BaseModel, Field
 
 import httpx
-from logto import LogtoClient
+from logto import LogtoClient, LogtoConfig
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import create_access_token
-from app.db.models import User, UserRole
-from app.schemas.auth import LogtoUserInfo
 
+from enum import Enum
 
+from app.schemas.user import UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class UserBase(BaseModel):
     name: str
     avatar: Optional[str] = None
     customData: Optional[Dict[str, Any]] = Field(default_factory=dict)
-    profile: Optional[Profile] = None
+    profile: Optional[Dict[str, Any]] = None
 
 # Request Model for Creating a User
 class UserCreateRequest(UserBase):
@@ -72,7 +72,7 @@ class UserCreateResponse(UserBase):
     applicationId: str
     isSuspended: bool
     hasPassword: bool
-    ssoIdentities: List[Dict[str, Any]]  # List to hold SSO identity details
+    ssoIdentities: Optional[List[Dict[str, Any]]] = None  # List to hold SSO identity details
 
 # Request Model for Updating a User
 class UserUpdateRequest(UserBase):
@@ -87,40 +87,151 @@ class UserGetResponse(UserCreateResponse):
     pass  # Inherits from UserCreateResponse since it has the same structure
 
 
-class LogtoService:
+class LogtoUserRole(BaseModel):
+    tenantId: str
+    id: str
+    name: str
+    description: Optional[str] = None
+    type: str
+    isDefault: bool
+
+
+
+class AccountFieldEnum(Enum):
+        OFF = "Off"
+        READ_ONLY = "ReadOnly"
+        EDIT = "Edit"
+
+    
+class AccountDataFields(BaseModel):
+        name: Optional[AccountFieldEnum] = Field(default=AccountFieldEnum.EDIT)
+        avatar: Optional[AccountFieldEnum] = Field(default=AccountFieldEnum.EDIT)
+        profile: Optional[AccountFieldEnum] = Field(default=AccountFieldEnum.EDIT)
+        email: Optional[AccountFieldEnum] = Field(default=AccountFieldEnum.EDIT)
+        phone: Optional[AccountFieldEnum] = Field(default=AccountFieldEnum.EDIT)
+        password: Optional[AccountFieldEnum] = Field(default=AccountFieldEnum.EDIT)
+        username: Optional[AccountFieldEnum] = Field(default=AccountFieldEnum.EDIT)
+        social: Optional[AccountFieldEnum] = Field(default=AccountFieldEnum.EDIT)
+        customData: Optional[AccountFieldEnum] = Field(default=AccountFieldEnum.EDIT)
+        mfa: Optional[AccountFieldEnum] = Field(default=AccountFieldEnum.EDIT)
+
+    
+class AccountData(BaseModel):
+        enabled: Optional[bool] = Field(default=True)
+        fields: AccountDataFields
+        webauthnRelatedOrigins: Optional[List] = Field(default=[]) 
+
+
+
+ResponseModel = TypeVar('ResponseModel', bound=BaseModel)
+
+class LogtoManagerService:
     """Service for handling Logto authentication and user synchronization."""
 
-    def __init__(self, db: Session, logto_client: LogtoClient = None):
-        self.db = db
-        self.logto_client = logto_client
+    _http_client: httpx.AsyncClient
+
+    def __init__(self):
+        self.logto_client = self.init_client()
         self._management_token = None
         self._token_expires_at = None
+        self.management_api_base = f"{settings.LOGTO_ENDPOINT}"
 
-        # Extract tenant ID from endpoint for Management API
-        if settings.LOGTO_ENDPOINT:
-            self.tenant_id = self._extract_tenant_id(settings.LOGTO_ENDPOINT)
-            self.management_api_base = f"https://{self.tenant_id}.ephyrtech.com/api"
-        else:
-            self.tenant_id = None
-            self.management_api_base = None
+        self._http_client = httpx.AsyncClient(base_url=self.management_api_base, timeout=30)
 
-    def _extract_tenant_id(self, endpoint: str) -> str:
-        """Extract tenant ID from LogTo endpoint URL."""
-        # Handle URLs like https://logto-wkc0gogw84o0g4owkswswc80.ephyrtech.com/
-        # or https://tenant-id.logto.app/
-        if ".logto.app" in endpoint:
-            # Extract from tenant-id.logto.app format
-            return endpoint.split("//")[1].split(".logto.app")[0]
-        else:
-            # For custom domains, extract the subdomain part
-            # This assumes the format like logto-{tenant_id}.domain.com
-            domain_part = endpoint.split("//")[1].split("/")[0]
-            if "logto-" in domain_part:
-                return domain_part.split("logto-")[1].split(".")[0]
+    async def close(self):
+        await self._http_client.aclose()
+
+
+    async def _make_management_request(
+        self,
+        method: str,
+        path: str,
+        json_data: Optional[Dict[str, Any]] = None,
+        response_model: Optional[Type[ResponseModel]] = None,
+        success_status: int = 200,
+        error_message_prefix: str = "Request to Management API failed"
+    ) -> Optional[ResponseModel]:
+        """
+        Internal helper using the persistent HTTP client.
+        """
+        try:
+            # 1. Get Token
+            token = await self._get_management_token()
+            if not token:
+                logger.error(f"{error_message_prefix}: Failed to get Management API token")
+                return None
+
+            # 2. Build Headers (Dynamic, as the token changes)
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
+
+            # 3. Execute Request using the persistent self._client
+            # Note: We now use self._client directly, no 'async with' block around it.
+            # The base_url is set in __init__, so we only use the relative 'path'.
+            
+            request_func = getattr(self._http_client, method.lower())
+            
+            if method in ['GET', 'DELETE']:
+                response = await request_func(
+                    path, 
+                    headers=headers
+                )
             else:
-                # Fallback: use the whole subdomain
-                return domain_part.split(".")[0]
+                response = await request_func(
+                    path, 
+                    json=json_data, 
+                    headers=headers
+                )
 
+            # 4. Handle Response (Error and Validation logic remain the same)
+            if response.status_code == success_status:
+                if response_model:
+                    try:
+                        result = response_model.model_validate(response.json())
+                        # Path uses base_url from client setup, response.url is full URL after execution
+                        logger.info(f"Successfully executed {method} request to {response.url}")
+                        return result
+                    except Exception as validation_e:
+                        logger.error(f"Failed to validate response model for {path}: {validation_e}")
+                        return None
+                else:
+                    return response.json() 
+            else:
+                logger.error(
+                    f"{error_message_prefix} ({method} {path}): "
+                    f"{response.status_code} - {response.text}"
+                )
+                return None
+
+        except httpx.HTTPError as he:
+            logger.error(f"HTTP Error during {method} {path}: {he}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error during {method} {path}: {e}")
+            return None
+
+
+    @staticmethod
+    def init_client(logto_config: Optional[LogtoConfig] = None):
+        """_summary_
+        Args:
+            logto_config (Optional[LogtoConfig], optional): _description_. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
+
+        if not logto_config:
+            logto_config = LogtoConfig(
+                endpoint=settings.LOGTO_ENDPOINT,
+                appId=settings.LOGTO_APP_ID,
+                appSecret=settings.LOGTO_APP_SECRET,
+            )
+        
+        return LogtoClient(logto_config)
+    
     async def _get_management_token(self) -> Optional[str]:
         """Get access token for LogTo Management API using client credentials."""
         try:
@@ -129,20 +240,18 @@ class LogtoService:
                 datetime.now() < self._token_expires_at - timedelta(minutes=5)):
                 return self._management_token
 
-            if not all([settings.LOGTO_ENDPOINT, settings.LOGTO_MANAGEMENT_APP_ID, settings.LOGTO_MANAGEMENT_APP_SECRET]):
+            if not all([settings.LOGTO_ENDPOINT, settings.LOGTO_APP_ID, settings.LOGTO_APP_SECRET]):
                 logger.error("LogTo configuration missing for Management API")
                 return None
 
             # Prepare token request
-            endpoint = settings.LOGTO_ENDPOINT.rstrip('/')
-            token_url = f"{endpoint}/oidc/token"
-            resource = f"{endpoint}/api" # for selfhosted logto
+            token_url = f"{self.management_api_base}/oidc/token"
 
             data = {
                 "grant_type": "client_credentials",
-                "client_id": settings.LOGTO_MANAGEMENT_APP_ID,
-                "client_secret": settings.LOGTO_MANAGEMENT_APP_SECRET,
-                "resource": resource,
+                "client_id": settings.LOGTO_APP_ID,
+                "client_secret": settings.LOGTO_APP_SECRET,
+                "resource": "https://default.logto.app/api",
                 "scope": "all"
             }
 
@@ -170,402 +279,178 @@ class LogtoService:
         except Exception as e:
             logger.error(f"Error getting Management API token: {e}")
             return None
-
-    async def get_user_info(self) -> Optional[LogtoUserInfo]:
-        """Get user information from Logto."""
-        try:
-            if not self.logto_client.isAuthenticated():
-                return None
             
-            user_info = await self.logto_client.fetchUserInfo()
-            if not user_info:
-                return None
-            
-            return LogtoUserInfo(
-                sub=user_info.sub,
-                email=getattr(user_info, 'email', None),
-                name=getattr(user_info, 'name', None),
-                given_name=getattr(user_info, 'given_name', None),
-                family_name=getattr(user_info, 'family_name', None),
-                picture=getattr(user_info, 'picture', None),
-                phone_number=getattr(user_info, 'phone_number', None),
-            )
-        except Exception as e:
-            logger.error(f"Failed to get user info from Logto: {e}")
-            return None
-    
-    def find_user_by_logto_id(self, logto_user_id: str) -> Optional[User]:
-        """Find user by Logto user ID."""
-        return self.db.query(User).filter(User.logto_user_id == logto_user_id).first()
-    
-    def find_user_by_email(self, email: str) -> Optional[User]:
-        """Find user by email."""
-        return self.db.query(User).filter(User.email == email).first()
-    
-    def create_or_update_user(self, logto_user_info: LogtoUserInfo) -> User:
-        """Create or update user from Logto user information."""
-        # First try to find by Logto ID
-        user = self.find_user_by_logto_id(logto_user_info.sub)
-        
-        # If not found by Logto ID, try to find by email
-        if not user and logto_user_info.email:
-            user = self.find_user_by_email(logto_user_info.email)
-            if user:
-                # Link existing user to Logto
-                user.logto_user_id = logto_user_info.sub
-        
-        # Create new user if not found
-        if not user:
-            user = User(
-                email=logto_user_info.email or f"user_{logto_user_info.sub}@logto.local",
-                logto_user_id=logto_user_info.sub,
-                role=UserRole.USER,
-                hashed_password=None,  # No password for Logto users
-            )
-            self.db.add(user)
-        
-        # Update user information from Logto
-        self._update_user_from_logto(user, logto_user_info)
-        
-        self.db.commit()
-        self.db.refresh(user)
-        return user
-    
-    def _update_user_from_logto(self, user: User, logto_user_info: LogtoUserInfo) -> None:
-        """Update user fields from Logto user information."""
-        if logto_user_info.email:
-            user.email = logto_user_info.email
-        
-        if logto_user_info.name:
-            user.name = logto_user_info.name
-        
-        if logto_user_info.given_name:
-            user.first_name = logto_user_info.given_name
-        
-        if logto_user_info.family_name:
-            user.last_name = logto_user_info.family_name
-        
-        if logto_user_info.picture:
-            user.photo_url = logto_user_info.picture
-        
-        if logto_user_info.phone_number:
-            user.phone_number = logto_user_info.phone_number
-        
-        # Set display name if not already set
-        if not user.display_name:
-            if user.first_name and user.last_name:
-                user.display_name = f"{user.first_name} {user.last_name}"
-            elif user.name:
-                user.display_name = user.name
-            elif user.first_name:
-                user.display_name = user.first_name
-    
-    def create_access_token_for_user(self, user: User) -> str:
-        """Create JWT access token for user."""
-        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        return create_access_token(
-            subject=user.id,
-            expires_delta=access_token_expires,
-            role=user.role.value
-        )
-    
-    async def authenticate_user(self) -> Optional[tuple[User, str]]:
-        """
-        Authenticate user with Logto and return user and access token.
-        Returns None if authentication fails.
-        """
-        try:
-            # Get user info from Logto
-            logto_user_info = await self.get_user_info()
-            if not logto_user_info:
-                return None
-            
-            # Create or update user
-            user = self.create_or_update_user(logto_user_info)
-            
-            # Create access token
-            access_token = self.create_access_token_for_user(user)
-            
-            return user, access_token
-        except Exception as e:
-            logger.error(f"Failed to authenticate user with Logto: {e}")
-            return None
-        
-    async def create_logto_user(self, user_data: UserCreateRequest) -> Optional[UserCreateResponse]:
-        """
-        Create a new user in LogTo using the Management API.
-
-        Args:
-            user_data: Dictionary containing user information with keys like:
-                - primaryEmail (str): User's primary email
-                - primaryPhone (str, optional): User's primary phone
-                - username (str, optional): Username
-                - password (str, optional): Plain text password
-                - name (str, optional): Display name
-                - avatar (str, optional): Avatar URL
-                - customData (dict, optional): Custom user data
-                - profile (dict, optional): User profile information
-
-        Returns:
-            Dictionary containing the created user data or None if failed
-        """
-        try:
-            token = await self._get_management_token()
-            if not token:
-                logger.error("Failed to get Management API token for user creation")
-                return None
-
-            if not self.management_api_base:
-                logger.error("Management API base URL not configured")
-                return None
-
-            # Prepare the request
-            url = f"{self.management_api_base}/users"
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json"
-            }
-
-            # Validate required fields
-            if not user_data.primaryEmail:
-                logger.error("primaryEmail is required for user creation")
-                return None
-
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, json=user_data.model_dump(), headers=headers)
-
-                if response.status_code == 201:
-                    created_user = UserCreateResponse.model_validate(response.json())
-                    logger.info(f"Successfully created LogTo user: {created_user.id}")
-                    return created_user
-                else:
-                    logger.error(f"Failed to create LogTo user: {response.status_code} - {response.text}")
-                    return None
-
-        except Exception as e:
-            logger.error(f"Error creating LogTo user: {e}")
-            return None
-
-    async def get_logto_user(self, user_id: str) -> Optional[UserGetResponse]:
-        """
-        Get user information from LogTo Management API.
-
-        Args:
-            user_id: LogTo user ID
-
-        Returns:
-            Dictionary containing user data or None if not found
-        """
-        try:
-            token = await self._get_management_token()
-            if not token:
-                logger.error("Failed to get Management API token for user retrieval")
-                return None
-
-            if not self.management_api_base:
-                logger.error("Management API base URL not configured")
-                return None
-
-            url = f"{self.management_api_base}/users"
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json"
-            }
-
-            async with httpx.AsyncClient(headers=headers) as client:
-                response = await client.get("https://logto-t40coowscs4c40okgs8gso0k.ephyrtech.com/api/users?page=1&page_size=20")
-
-                if response.status_code == 200:
-                    user_data = UserGetResponse.model_validate(response.json())
-                    logger.info(f"Successfully retrieved LogTo user: {user_id}")
-                    return user_data
-                elif response.status_code == 404:
-                    logger.warning(f"LogTo user not found: {user_id}")
-                    return None
-                else:
-                    logger.error(f"Failed to get LogTo user: {response.status_code} - {response.text}")
-                    return None
-
-        except Exception as e:
-            logger.error(f"Error getting LogTo user: {e}")
-            return None
-
-    async def update_logto_user(self, user_id: str, user_data: UserUpdateRequest) -> Optional[UserUpdateResponse]:
-        """
-        Update user information in LogTo Management API.
-
-        Args:
-            user_id: LogTo user ID
-            user_data: Dictionary containing fields to update
-
-        Returns:
-            Dictionary containing updated user data or None if failed
-        """
-        try:
-            token = await self._get_management_token()
-            if not token:
-                logger.error("Failed to get Management API token for user update")
-                return None
-
-            if not self.management_api_base:
-                logger.error("Management API base URL not configured")
-                return None
-
-            url = f"{self.management_api_base}/users/{user_id}"
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json"
-            }
-
-            async with httpx.AsyncClient() as client:
-                response = await client.patch(url, json=user_data.model_dump(), headers=headers)
-
-                if response.status_code == 200:
-                    updated_user = UserUpdateResponse.model_validate(response.json())
-                    logger.info(f"Successfully updated LogTo user: {user_id}")
-                    return updated_user
-                else:
-                    logger.error(f"Failed to update LogTo user: {response.status_code} - {response.text}")
-                    return None
-
-        except Exception as e:
-            logger.error(f"Error updating LogTo user: {e}")
-            return None
-
-    async def create_user_with_profile(
-        self,
-        email: str,
-        password: Optional[str] = None,
-        username: Optional[str] = None,
-        phone: Optional[str] = None,
-        name: Optional[str] = None,
-        given_name: Optional[str] = None,
-        family_name: Optional[str] = None,
-        avatar: Optional[str] = None,
-        custom_data: Optional[Dict[str, Any]] = None
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Convenience method to create a LogTo user with common profile fields.
-
-        Args:
-            email: User's email address (required)
-            password: Plain text password (optional)
-            username: Username (optional)
-            phone: Phone number (optional)
-            name: Display name (optional)
-            given_name: First name (optional)
-            family_name: Last name (optional)
-            avatar: Avatar URL (optional)
-            custom_data: Additional custom data (optional)
-
-        Returns:
-            Dictionary containing the created user data or None if failed
-        """
-        user_data = UserCreateRequest(
-            primaryEmail=email,
-            password=password,
-            username=username,
-            primaryPhone=phone,
-            name=name,
-            avatar=avatar,
-            customData=custom_data,
-            passwordDigest=None,
-        )
-
-        # Build profile object if any profile fields are provided
-        profile = Profile(
-            givenName=given_name,
-            familyName=family_name,
-            middleName=None,
-            nickname=None,
-            preferredUsername=None,
-            profile=None,
-            website=None,
-            gender=None,
-            birthdate=None,
-            zoneinfo=None,
-            locale=None,
-            address=None
+    async def update_account_center_settings(self, account_data):
+        path = "/api/account-center"
+        return await self._make_management_request(
+            method="PATCH",
+            path=path,
+            json_data=user_data.model_dump(by_alias=True, exclude_none=True),
+            response_model=UserUpdateResponse,
+            success_status=200,
+            error_message_prefix=f"Failed to update logTo user {user_id}"
         )
 
 
-        if given_name:
-            profile["givenName"] = given_name
-        if family_name:
-            profile["familyName"] = family_name
 
-        if profile:
-            user_data["profile"] = profile
 
-        return await self.create_logto_user(user_data)
-
-    async def sync_local_user_to_logto(self, user: User) -> Optional[str]:
-        """
-        Create a LogTo user for an existing local user and update the local user with LogTo ID.
+class LogtoUserManager(LogtoManagerService):
+        
+    async def get(self, user_id):
+        """Get user data for the given ID.
 
         Args:
-            user: The local User object
+            user_id (str): The unique identifier of the user.
 
         Returns:
-            LogTo user ID if successful, None if failed
+            UserGetResponse: User data for the given ID.
         """
-        try:
-            # Check if user already has LogTo ID
-            if user.logto_user_id:
-                logger.info(f"User {user.id} already has LogTo ID: {user.logto_user_id}")
-                return user.logto_user_id
+        path = f"/api/users/{user_id}"
+        return await self._make_management_request(
+            method="GET",
+            path=path,
+            response_model=UserGetResponse,
+            success_status=200,
+            error_message_prefix=f"Failed to get logTo user {user_id}"
+        )
+    
+    async def update(self, user_id, user_data: UserUpdateRequest) -> UserUpdateResponse|None:
+        path = f"/api/users/{user_id}"
+        return await self._make_management_request(
+            method="PATCH",
+            path=path,
+            json_data=user_data.model_dump(by_alias=True, exclude_none=True),
+            response_model=UserUpdateResponse,
+            success_status=200,
+            error_message_prefix=f"Failed to update logTo user {user_id}"
+        )
 
-            # Prepare user data for LogTo
-            user_data: Dict[str, Any] = {
-                "primaryEmail": user.email,
-            }
+    async def create(self, user_data: UserCreateRequest) -> UserCreateResponse|None:
+        path = f"/api/users"
+        return await self._make_management_request(
+            method="POST",
+            path=path,
+            json_data=user_data.model_dump(by_alias=True, exclude_none=True),
+            response_model=UserCreateResponse,
+            success_status=200,
+            error_message_prefix=f"Failed to create logTo user {user_data.primaryEmail}"
+        )
+    
+    async def delete(self, user_id: str):
+        path = f"/api/users/{user_id}"
+        return await self._make_management_request(
+            method="DELETE",
+            path=path,
+            success_status=204,
+            error_message_prefix=f"Failed to delete logTo user {user_id}"
+        )
+    
+    async def get_roles(self, user_id):
+        path = f"/api/users/{user_id}/roles"
+        resp = await self._make_management_request(
+            method="GET",
+            path=path,
+            success_status=200,
+            error_message_prefix=f"Failed to get logTo user roles {user_id}"
+        )
+        roles = [LogtoUserRole.model_validate(r) for r in resp]
+        return roles
+    
+    async def update_roles(self, user_id: str, role_ids: List[str]):
+        """Update API resource roles assigned to the user. This will replace the existing roles.
 
-            # Add name if available
-            if user.display_name:
-                user_data["name"] = user.display_name
-            elif user.name:
-                user_data["name"] = user.name
-            elif user.first_name or user.last_name:
-                first_name = str(user.first_name) if user.first_name else ""
-                last_name = str(user.last_name) if user.last_name else ""
-                user_data["name"] = f"{first_name} {last_name}".strip()
+        Args:
+            user_id (str): The unique identifier of the user.
+            role_ids (List[str]): An array of API resource role IDs to assign.
 
-            # Add profile information if available
-            profile: Dict[str, str] = {}
-            if user.first_name:
-                profile["givenName"] = str(user.first_name)
-            if user.last_name:
-                profile["familyName"] = str(user.last_name)
-            if profile:
-                user_data["profile"] = profile
+        Raises:
+            Error: Minimum length of each role is 1.
 
-            # Add optional fields
-            if user.phone_number:
-                user_data["primaryPhone"] = user.phone_number
-            if user.photo_url:
-                user_data["avatar"] = user.photo_url
+        """
+        if len(role_ids) < 1:
+            raise Error("Not enough roles specified for {user_id}")
+        path = f"/api/users/{user_id}"
+        return await self._make_management_request(
+            method="PUT",
+            path=path,
+            json_data={
+                "roleIds": role_ids
+            },
+            success_status=200,
+            error_message_prefix=f"Failed to update logTo user roles {user_id}"
+        )
+    
+    async def update_user_profile(self, user_id: str, profile_data: Profile):
+        path = f"/api/users/{user_id}/profile"
+        return await self._make_management_request(
+            method="PATCH",
+            path=path,
+            json_data={
+                "profile": profile_data.model_dump(by_alias=True, exclude_none=True)
+            },
+            success_status=200,
+            response_model=Profile,
+            error_message_prefix=f"Failed to update logTo user profile {user_id}"
+        )
+    
+    async def update_password(self, user_id: str, password: str):
+        if len(password) < 1:
+            raise Error("Min pwd length is 1 symbol")
 
-            # Add custom data with local user info
-            user_data["customData"] = {
-                "localUserId": user.id,
-                "createdFromLocal": True,
-                "role": user.role.value if user.role else "USER"
-            }
+        path = f"/api/users/{user_id}/password"
+        return await self._make_management_request(
+            method="PATCH",
+            path=path,
+            json_data={
+                "password": password
+            },
+            success_status=200,
+            response_model=UserCreateResponse,
+            error_message_prefix=f"Failed to update logTo user pwd {user_id}"
+        )
 
-            # Create user in LogTo
-            created_user = await self.create_logto_user(user_data)
+    async def verify_password(self, user_id: str, password: str):
+        if len(password) < 1:
+            raise Error("Min pwd length is 1 symbol")
 
-            if created_user:
-                # Update local user with LogTo ID
-                user.logto_user_id = created_user["id"]
-                self.db.commit()
-                logger.info(f"Successfully synced local user {user.id} to LogTo user {created_user['id']}")
-                return created_user["id"]
-            else:
-                logger.error(f"Failed to create LogTo user for local user {user.id}")
-                return None
+        path = f"/api/users/{user_id}/password/verify"
+        return await self._make_management_request(
+            method="POST",
+            path=path,
+            json_data={
+                "password": password
+            },
+            success_status=204,
+            error_message_prefix=f"Failed to verify logTo user pwd {user_id}"
+        )
+    
+    
+    async def check_password_exists(self, user_id: str):
+        path = f"/api/users/{user_id}/has-password"
+        resp = await self._make_management_request(
+            method="GET",
+            path=path,
+            success_status=200,
+            error_message_prefix=f"Failed to check logTo user pwd {user_id}"
+        )
+        if not resp:
+            return False
+        
+        return resp['hasPassword']
+        
+    
+        
+    
 
-        except Exception as e:
-            logger.error(f"Error syncing local user {user.id} to LogTo: {e}")
-            return None
+
+
+
+
+
+
+
+
+
+
+
 

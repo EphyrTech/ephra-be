@@ -4,8 +4,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_from_auth
-from app.api.role_deps import require_care_or_admin
-from app.core.auth_middleware import verify_access_token
+from app.api.rbac_deps import (
+    require_cancel_appointments,
+    require_care_provider_or_admin,
+    require_create_appointments,
+    require_update_appointments,
+    require_view_assigned_users,
+)
+from app.core.auth_middleware import AuthInfo, verify_access_token
+from app.core.rbac import Scopes, has_scope
 from app.db.database import get_db
 from app.db.models import User, UserAssignment, UserRole
 from app.schemas.appointment import Appointment as AppointmentSchema
@@ -22,15 +29,25 @@ router = APIRouter()
 
 @router.get("/assigned-users", response_model=List[dict])
 def get_assigned_users(
-    current_user: User = Depends(require_care_or_admin),
+    auth: AuthInfo = Depends(require_view_assigned_users),
+    current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
     Get users assigned to the current care provider.
     Returns users that are actually assigned to the care provider through the assignment system.
+    Requires 'view:assigned-users' scope.
     """
-    if current_user.role == UserRole.CARE_PROVIDER:
-        # For care providers, return only users assigned to them
+    # Check if user has admin scope for broader access
+    if has_scope(auth, Scopes.MANAGE_ALL_USERS):
+        # Admins can see all active users
+        users = (
+            db.query(User)
+            .filter(User.role == UserRole.USER, User.is_active == True)
+            .all()
+        )
+    else:
+        # Care providers see only users assigned to them
         assignments = (
             db.query(UserAssignment)
             .filter(
@@ -45,18 +62,6 @@ def get_assigned_users(
             db.query(User).filter(User.id.in_(user_ids), User.is_active == True).all()
             if user_ids
             else []
-        )
-
-    elif current_user.role == UserRole.ADMIN:
-        # Admins can see all active users
-        users = (
-            db.query(User)
-            .filter(User.role == UserRole.USER, User.is_active == True)
-            .all()
-        )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
         )
 
     return [
@@ -75,14 +80,15 @@ def get_assigned_users(
 def get_appointments(
     skip: int = 0,
     limit: int = 100,
+    auth: AuthInfo = Depends(verify_access_token),
     current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Retrieve appointments based on user role:
-    - Regular users: their own appointments
+    Retrieve appointments based on user permissions:
+    - Users with 'view:all-appointments' scope: all appointments
+    - Users with 'join:appointments' scope: their own appointments
     - Care providers: appointments where they are the care provider
-    - Admins: all appointments
     """
     try:
         appointment_service = AppointmentService(db)
@@ -97,14 +103,16 @@ def get_appointments(
 @router.post("/", response_model=AppointmentSchema, status_code=status.HTTP_201_CREATED)
 def create_appointment(
     appointment_in: AppointmentCreate,
+    auth: AuthInfo = Depends(require_create_appointments),
     current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
     Create new appointment using the service layer.
-    - Regular users: Create appointments for themselves
-    - Care providers: Create appointments for their assigned users
-    - Admins: Create appointments for any user
+    Requires 'create:appointments' scope.
+    - Users with scope: Create appointments for themselves
+    - Care providers with scope: Create appointments for their assigned users
+    - Admins with scope: Create appointments for any user
     """
     try:
         appointment_service = AppointmentService(db)
@@ -121,8 +129,9 @@ def create_appointment(
             "CONFLICT_ERROR": status.HTTP_409_CONFLICT,
             "BUSINESS_RULE_ERROR": status.HTTP_422_UNPROCESSABLE_ENTITY,
         }
+        error_code = e.error_code or "UNKNOWN_ERROR"
         status_code = status_map.get(
-            e.error_code, status.HTTP_500_INTERNAL_SERVER_ERROR
+            error_code, status.HTTP_500_INTERNAL_SERVER_ERROR
         )
         raise HTTPException(status_code=status_code, detail=e.message)
 
@@ -155,11 +164,13 @@ def get_appointment(
 def reschedule_appointment(
     appointment_id: str,
     reschedule_data: AppointmentReschedule,
+    auth: AuthInfo = Depends(require_update_appointments),
     current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
     Reschedule an appointment and update email reminder.
+    Requires 'update:appointments' scope.
     """
     try:
         appointment_service = AppointmentService(db)
@@ -180,11 +191,13 @@ def reschedule_appointment(
 def update_appointment(
     appointment_id: str,
     appointment_in: AppointmentUpdate,
+    auth: AuthInfo = Depends(require_update_appointments),
     current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> Any:
     """
     Update an appointment.
+    Requires 'update:appointments' scope.
     """
     try:
         appointment_service = AppointmentService(db)
@@ -204,11 +217,13 @@ def update_appointment(
 @router.delete("/{appointment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def cancel_appointment(
     appointment_id: str,
+    auth: AuthInfo = Depends(require_cancel_appointments),
     current_user: User = Depends(get_current_user_from_auth),
     db: Session = Depends(get_db),
 ) -> None:
     """
     Cancel an appointment and its reminder email.
+    Requires 'cancel:appointments' scope.
     """
     try:
         appointment_service = AppointmentService(db)

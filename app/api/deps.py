@@ -15,7 +15,7 @@ from app.db.models import User, UserRole
 from app.schemas.auth import TokenPayload
 from app.services import logto_service
 from app.services.logto_service import (
-    LogtoService,
+    LogtoManagerService,
     UserCreateRequest,
     UserUpdateRequest,
     UserGetResponse

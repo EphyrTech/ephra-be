@@ -1,5 +1,5 @@
-from pydantic import BaseModel, field_validator
-from typing import Optional, TYPE_CHECKING
+from pydantic import BaseModel, field_validator, Field
+from typing import Optional, TYPE_CHECKING, Any, Dict, List
 
 if TYPE_CHECKING:
     from app.schemas.user import User as UserSchema
@@ -62,3 +62,26 @@ class LogtoConfig(BaseModel):
     # Note: redirectUri and postLogoutRedirectUri are now handled dynamically by the frontend
     redirectUri: Optional[str] = None
     postLogoutRedirectUri: Optional[str] = None
+
+class AuthInfo(BaseModel):
+    sub: str
+    client_id: Optional[str] = None
+    organization_id: Optional[str] = None
+    scopes: List[str] = Field(default_factory=list)
+    audience: List[str] = Field(default_factory=list)
+
+    # verify if user has any of the scopes using pydantic
+    def has_scope(self, scope: str) -> bool:
+        """Check if user has a specific scope."""
+        return scope in self.scopes
+
+    def has_any_scope(self, scopes: List[str]) -> bool:
+        """Check if user has any of the specified scopes."""
+        return any(s in self.scopes for s in scopes)
+
+    def has_all_scopes(self, scopes: List[str]) -> bool:
+        """Check if user has all of the specified scopes."""
+        return all(s in self.scopes for s in scopes)
+
+    def to_dict(self) -> dict:
+        return self.model_dump()

@@ -10,13 +10,11 @@ from pydantic import BaseModel, Field
 
 import httpx
 from logto import LogtoClient, LogtoConfig
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
 
 from enum import Enum
 
-from app.schemas.user import UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +194,8 @@ class LogtoManagerService:
                     except Exception as validation_e:
                         logger.error(f"Failed to validate response model for {path}: {validation_e}")
                         return None
+                elif success_status == 204:
+                    return True
                 else:
                     return response.json() 
             else:
@@ -353,7 +353,9 @@ class LogtoUserManager(LogtoManagerService):
             success_status=200,
             error_message_prefix=f"Failed to get logTo user roles {user_id}"
         )
-        roles = [LogtoUserRole.model_validate(r) for r in resp]
+        
+        roles = [LogtoUserRole.model_validate(r) for r in resp] if resp else None
+
         return roles
     
     async def update_roles(self, user_id: str, role_ids: List[str]):

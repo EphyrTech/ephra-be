@@ -1,7 +1,8 @@
 import os
-from typing import List, Union
+from typing import List, Union, Dict, Any
 
-from pydantic import Field
+from httpcore import stream
+from pydantic import Field, field_validator, ValidationInfo
 from pydantic_settings import BaseSettings
 
 
@@ -94,6 +95,64 @@ class Settings(BaseSettings):
     # Meeting link generation
     MEETING_LINK_BASE_URL: str = Field(default="https://meet.jit.si", alias="MEETING_LINK_BASE_URL")
     RUN_MIGRATIONS_ON_STARTUP: bool = Field(default=True, alias="RUN_MIGRATIONS_ON_STARTUP")
+
+    ROLES_MAP_STRING: str = Field(default="dbrole:logtorole:logtoid,dbrole1:logtorole1:logtoid1", alias="ROLES_MAP_STRING")
+
+    roles_map: Dict[str, Dict[str, str]] = Field(
+        default="dbrole:logtorole:logtoid,dbrole1:logtorole1:logtoid1", 
+        alias="ROLES_MAP" 
+    )
+    
+    @field_validator('roles_map', mode='before')
+    @classmethod
+    def parse_roles_map(cls, value: Any, info: ValidationInfo) -> Dict[str, List[str]]:
+        """
+        Processes the input string from the original alias before assigning it
+        to the 'roles_map' attribute.
+        """
+        # We must access the raw input string field defined above.
+        # It's passed via the ValidationInfo context when using 'mode=before' 
+        # for a synthetic field (or using the source input field name).
+        
+        # Access the raw string value (this step can be tricky depending on how V2 is loaded. 
+        # A simpler way is to validate the raw string itself and pass it directly)
+        
+        # Let's pivot and validate the raw string directly and use a model_data handler
+        # OR simplify the loader:
+
+        # --- SIMPLER APPROACH: Validating the raw string and passing it back as the parsed Dict ---
+        
+        # The key here is that when ROLES_MAP is loaded from the environment/source, 
+        # Pydantic attempts to assign it to *all* fields that have matching aliases or names.
+        
+        # If we use `info.data.get('ROLES_MAP')` to grab the raw string:
+        
+        raw_string = info.data.get('ROLES_MAP') or info.data.get('ROLES_MAP_STRING')
+
+        roles_map: Dict[str, Dict[str, str]] = {}
+        
+        if not raw_string:
+            return roles_map
+
+        individual_mappings = raw_string.split(',')
+        
+        for mapping in individual_mappings:
+            mapping = mapping.strip()
+            if not mapping:
+                continue
+
+            parts = mapping.split(':')
+            
+            if len(parts) == 3:
+                db_role = parts[0].strip()
+                logto_role = parts[1].strip()
+                logto_id = parts[2].strip()
+                roles_map[db_role] = {"logto_role":logto_role, "logto_id":logto_id}
+            else:
+                # In a real app, use logging.warning
+                print(f"Warning: Skipping malformed role mapping entry: {mapping}")
+
+        return roles_map
 
 def get_settings() -> Settings:
     """Get the global settings instance."""

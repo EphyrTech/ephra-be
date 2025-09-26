@@ -5,14 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg2 import IntegrityError, sql
 from sqlalchemy.orm import Session
 
-from app.core import logto_client
 from app.core.auth_middleware import AuthInfo, verify_access_token
 from app.core.config import settings
-from app.core.logto_client import get_logto_config
 from app.db.database import get_db
 from app.db.models import User, UserRole
 from app.schemas.user import User as UserSchema
 from app.services.logto_service import LogtoUserManager
+from app.services.user_service import BaseUser
 
 from fastapi.security import OAuth2PasswordBearer
 import httpx
@@ -46,54 +45,19 @@ async def get_current_user(
     Get current user information from JWT token.
     This endpoint validates the JWT token and returns the user information.
     """
-    try:
         
-        logto_user = await logto_user_manager.get(auth.sub)
-        user_roles = await logto_user_manager.get_roles(auth.sub)
-        role = [r for r in user_roles if r.isDefault][-1]
-
-        # application = logto_user.applicationId #TODO: in future identify where he comes from
-
-        user = db.query(User).filter(User.logto_user_id == auth.sub).first()
-
-        if not user:
-            logger.info(
-                f"Creating new user from Logto JWT. Available claims: {vars(auth)}"
-            )
-
-
-            name = (
-                getattr(logto_user, "name", None)
-                or "NoName Persona"
-            )
-            logger.info(f"User name from Logto: {name}")
-
-            user = User(
-                email=logto_user.primaryEmail,
-                logto_user_id=auth.sub,
-                role=UserRole(role.name),
-                hashed_password=None,  # No password for Logto users
-                name=name,
-                is_active=not logto_user.isSuspended,
-                photo_url=logto_user.avatar,
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-
-        return user
-    except IntegrityError as e:
-        logger.error(f"Integrity error while creating user: {e}")
-        db.rollback()
-        if "duplicate key value violates unique constraint" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="User already exists",
-            )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get user information",
+    user = BaseUser(
+            db=db,
+            logto_user_manager=logto_user_manager,
+            log_to_user_id=auth.sub
         )
+    await user.init()
+
+    # application = logto_user.applicationId #TODO: in future identify where he comes from
+
+    await user.upsert_db_user()
+
+    return user.current_db_user
 
 
 # # LogTo Management API Endpoints

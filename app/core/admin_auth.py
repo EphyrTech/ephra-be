@@ -100,10 +100,10 @@ def create_admin_session(username: str, ip_address: str, user_agent: str, user_i
     session_id = secrets.token_urlsafe(32)
     session = AdminSession(session_id, username, ip_address, user_agent, user_id)
     admin_sessions[session_id] = session
-    
+
     # Log session creation
-    logger.info(f"Admin session created - User: {username}, IP: {ip_address}, Session: {session_id}")
-    
+    logger.info(f"Admin session created - User: {username}, IP: {ip_address}, Session: {session_id}, Total sessions: {len(admin_sessions)}")
+
     return session_id
 
 def get_admin_session(session_id: str) -> Optional[AdminSession]:
@@ -153,7 +153,10 @@ def require_admin_session(request: Request, db: Session = Depends(get_db)) -> Ad
 
     # Get session ID from cookie
     session_id = request.cookies.get("admin_session_id")
+    logger.debug(f"Admin session check - Session ID: {session_id}, Path: {request.url.path}")
+
     if not session_id:
+        logger.warning(f"No admin session cookie found for {request.url.path}")
         # Check if this is an HTML request (browser) vs API request
         accept_header = request.headers.get("accept", "")
         if "text/html" in accept_header:
@@ -168,6 +171,7 @@ def require_admin_session(request: Request, db: Session = Depends(get_db)) -> Ad
 
     session = get_admin_session(session_id)
     if not session:
+        logger.warning(f"Invalid or expired admin session - Session ID: {session_id}, Path: {request.url.path}, Active sessions: {len(admin_sessions)}")
         # Check if this is an HTML request (browser) vs API request
         accept_header = request.headers.get("accept", "")
         if "text/html" in accept_header:

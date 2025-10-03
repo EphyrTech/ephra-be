@@ -3,49 +3,36 @@
 import json
 import logging
 import uuid
-from datetime import datetime, time, timedelta
+from datetime import datetime
 from datetime import datetime as _dt
+from datetime import time, timedelta
 from typing import Any, Dict, List, Optional
 
 import pendulum
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
+from fastapi import (APIRouter, Depends, Form, HTTPException, Request,
+                     Response, status)
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.admin_auth import (
-    AdminSession,
-    admin_sessions,
-    authenticate_superadmin,
-    cleanup_expired_sessions,
-    create_admin_session,
-    get_admin_session,
-    get_client_ip,
-    get_recent_audit_entries,
-    get_user_agent,
-    invalidate_admin_session,
-    log_admin_action,
-    require_admin_session,
-)
+from app.core.admin_auth import (AdminSession, admin_sessions,
+                                 authenticate_superadmin,
+                                 cleanup_expired_sessions,
+                                 create_admin_session, get_admin_session,
+                                 get_client_ip, get_recent_audit_entries,
+                                 get_user_agent, invalidate_admin_session,
+                                 log_admin_action, require_admin_session)
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.db.database import get_db
-from app.db.models import (
-    Appointment,
-    AppointmentStatus,
-    Availability,
-    CareProviderProfile,
-    Journal,
-    MediaFile,
-    PersonalJournal,
-    SpecialistType,
-    User,
-    UserRole,
-    generate_uuid,
-)
+from app.db.models import (Appointment, AppointmentStatus, Availability,
+                           CareProviderProfile, Journal, MediaFile,
+                           PersonalJournal, SpecialistType, User, UserRole,
+                           generate_uuid)
 from app.middleware import invalidate_cache
-from app.services.appointment_service import AppointmentCreate, AppointmentService
+from app.services.appointment_service import (AppointmentCreate,
+                                              AppointmentService)
 from app.services.user_service import CareProviderUser
 
 logger = logging.getLogger(__name__)
@@ -122,9 +109,24 @@ async def admin_login(
             "request": request,
             "error": "Invalid credentials"
         }, status_code=401)
-    user = db.query(User).filter(User.display_name == username).first()
+
+    # Find user for session creation - handle both superadmin and database admin users
+    user = None
+    user_id = "superadmin"  # Default for hardcoded superadmin
+
+    # If username is an email, try to find the database user
+    if "@" in username:
+        user = db.query(User).filter(User.email == username).first()
+        if user:
+            user_id = user.id
+    else:
+        # For non-email usernames, try display_name lookup
+        user = db.query(User).filter(User.display_name == username).first()
+        if user:
+            user_id = user.id
+
     # Create session
-    session_id = create_admin_session(username, ip_address, user_agent, user.id)
+    session_id = create_admin_session(username, ip_address, user_agent, user_id)
 
     # Set secure cookie
     response = RedirectResponse(url="/admin-control-panel-x7k9m2/dashboard", status_code=302)
@@ -133,11 +135,12 @@ async def admin_login(
         value=session_id,
         max_age=8 * 60 * 60,  # 8 hours
         httponly=True,
-        secure=settings.ENV == "prod",
-        samesite="strict"
+        secure=False,  # TEMPORARILY DISABLED: May be causing cookie issues in production
+        samesite="lax"  # Changed from strict to lax for better compatibility
     )
 
     logger.info(f"Successful admin login - Username: {username}, IP: {ip_address}, Session: {session_id}")
+    logger.info(f"Setting admin session cookie - Session ID: {session_id}, ENV: {settings.ENV}")
     return response
 
 @router.get("/logout")

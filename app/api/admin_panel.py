@@ -2,7 +2,9 @@
 
 import json
 import logging
-from datetime import datetime, timedelta
+import uuid
+from datetime import datetime, time, timedelta
+from datetime import datetime as _dt
 from typing import Any, Dict, List, Optional
 
 import pendulum
@@ -16,14 +18,18 @@ from app.core.admin_auth import (
     AdminSession,
     admin_sessions,
     authenticate_superadmin,
+    cleanup_expired_sessions,
     create_admin_session,
     get_admin_session,
     get_client_ip,
+    get_recent_audit_entries,
     get_user_agent,
     invalidate_admin_session,
     log_admin_action,
+    require_admin_session,
 )
 from app.core.config import settings
+from app.core.security import get_password_hash
 from app.db.database import get_db
 from app.db.models import (
     Appointment,
@@ -39,23 +45,8 @@ from app.db.models import (
     generate_uuid,
 )
 from app.middleware import invalidate_cache
-from app.core.admin_auth import require_admin_session
-from app.services.user_service import CareProviderUser
-import uuid
-from datetime import datetime as _dt, time
-from app.db.models import Availability, CareProviderProfile, SpecialistType
-from app.core.admin_auth import (
-    cleanup_expired_sessions,
-    get_admin_session,
-    invalidate_admin_session,
-)
-from app.core.security import get_password_hash
-from app.core.admin_auth import get_recent_audit_entries
-from app.core.admin_auth import require_admin_session
 from app.services.appointment_service import AppointmentCreate, AppointmentService
-
-
-
+from app.services.user_service import CareProviderUser
 
 logger = logging.getLogger(__name__)
 
@@ -87,12 +78,16 @@ def get_admin_session_or_redirect(request: Request):
         if not session:
             return None
 
-        # Verify IP address for additional security
-        current_ip = get_client_ip(request)
-        if session.ip_address != current_ip:
-            logger.warning(f"Admin session IP mismatch - Session IP: {session.ip_address}, Current IP: {current_ip}")
-            invalidate_admin_session(session_id)
-            return None
+        # TEMPORARILY DISABLED: IP validation causing issues in production with proxies/load balancers
+        # The IP address can vary between requests due to proxy forwarding, causing frequent logouts
+        # TODO: Implement more robust IP validation or make it configurable
+        #
+        # # Verify IP address for additional security
+        # current_ip = get_client_ip(request)
+        # if session.ip_address != current_ip:
+        #     logger.warning(f"Admin session IP mismatch - Session IP: {session.ip_address}, Current IP: {current_ip}")
+        #     invalidate_admin_session(session_id)
+        #     return None
 
         return session
     except Exception:

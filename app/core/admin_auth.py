@@ -180,6 +180,21 @@ def require_admin_session(request: Request, db: Session = Depends(get_db)) -> Ad
                 detail="Invalid or expired admin session"
             )
 
+    # TEMPORARILY DISABLED: IP validation causing issues in production with proxies/load balancers
+    # The IP address can vary between requests due to proxy forwarding, causing frequent logouts
+    # This affects both HTML pages and API endpoints
+    # TODO: Implement more robust IP validation or make it configurable
+    #
+    # # Additional IP validation for API endpoints
+    # current_ip = get_client_ip(request)
+    # if session.ip_address != current_ip:
+    #     logger.warning(f"Admin session IP mismatch - Session IP: {session.ip_address}, Current IP: {current_ip}")
+    #     invalidate_admin_session(session_id)
+    #     raise HTTPException(
+    #         status_code=status.HTTP_401_UNAUTHORIZED,
+    #         detail="Invalid or expired admin session"
+    #     )
+
     return session
 
 def log_admin_action(session: AdminSession, action: str, details: dict = None):

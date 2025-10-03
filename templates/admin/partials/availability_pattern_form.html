@@ -1,0 +1,193 @@
+{% set _cpid = care_provider_id | default('') %}
+<div class="card mt-4">
+  <div class="card-header">
+    <h6 class="m-0 font-weight-bold text-success">Create Availability Pattern</h6>
+  </div>
+  <div class="card-body">
+    <form id="availabilityPatternForm">
+      {% if not _cpid %}
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <label for="patternCareProviderSelect" class="form-label">Care Provider</label>
+          <select class="form-select" id="patternCareProviderSelect" name="careProviderId" required>
+            <option value="">Select Care Provider</option>
+          </select>
+        </div>
+      </div>
+      {% else %}
+      <input type="hidden" id="patternCareProviderId" value="{{ _cpid }}" />
+      {% endif %}
+
+      <div class="row mb-3">
+        <div class="col-md-4">
+          <label for="occurrence" class="form-label">Occurrence</label>
+          <select class="form-select" id="occurrence" name="occurrence" required>
+            <option value="1">Every day</option>
+            <option value="2" selected>Every week</option>
+            <option value="3">Every 2 weeks</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label for="applyForMonth" class="form-label">Apply for Next Month</label>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="applyForMonth" name="applyForMonth" checked>
+            <label class="form-check-label" for="applyForMonth">Create slots for the next 4 weeks</label>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <label for="skipWeekends" class="form-label">Skip Weekends</label>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="skipWeekends" name="skipWeekends">
+            <label class="form-check-label" for="skipWeekends">If recurrence hits Sat/Sun, skip them</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Days of week</label>
+        <div class="d-flex flex-wrap gap-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="dayMon" name="days[]" value="0">
+            <label class="form-check-label" for="dayMon">Mon</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="dayTue" name="days[]" value="1">
+            <label class="form-check-label" for="dayTue">Tue</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="dayWed" name="days[]" value="2">
+            <label class="form-check-label" for="dayWed">Wed</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="dayThu" name="days[]" value="3">
+            <label class="form-check-label" for="dayThu">Thu</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="dayFri" name="days[]" value="4">
+            <label class="form-check-label" for="dayFri">Fri</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="daySat" name="days[]" value="5">
+            <label class="form-check-label" for="daySat">Sat</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="daySun" name="days[]" value="6">
+            <label class="form-check-label" for="daySun">Sun</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <label for="startTime" class="form-label">Start Time</label>
+          <input type="time" class="form-control" id="startTime" name="startTime" required>
+        </div>
+        <div class="col-md-6">
+          <label for="endTime" class="form-label">End Time</label>
+          <input type="time" class="form-control" id="endTime" name="endTime" required>
+        </div>
+      </div>
+
+      <div class="d-grid">
+        <button type="submit" class="btn btn-success">
+          <i class="fas fa-calendar-plus"></i> Create Availability Pattern
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function(){
+  document.addEventListener('DOMContentLoaded', function(){
+    const patternForm = document.getElementById('availabilityPatternForm');
+    if (!patternForm) return;
+
+    const staticCareProviderId = document.getElementById('patternCareProviderId')?.value || '';
+
+    // Load care providers if no static ID provided
+    if (!staticCareProviderId) {
+      const select = document.getElementById('patternCareProviderSelect');
+      if (select) {
+        fetch('/admin-control-panel-x7k9m2/api/care-providers', { credentials: 'include' })
+          .then(r => r.json())
+          .then(data => {
+            select.innerHTML = '<option value="">Select Care Provider</option>';
+            if (data.success && Array.isArray(data.care_providers)) {
+              data.care_providers.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = `${p.first_name || ''} ${p.last_name || ''} (${p.email})`.trim();
+                select.appendChild(opt);
+              });
+            }
+          })
+          .catch(() => {});
+      }
+    }
+
+    patternForm.addEventListener('submit', function(e){
+      e.preventDefault();
+      const formData = new FormData(patternForm);
+      const careProviderId = staticCareProviderId || formData.get('careProviderId');
+
+      if (!careProviderId) {
+        alert('Please select a care provider');
+        return;
+      }
+
+      const selectedDays = Array.from(document.querySelectorAll('input[name="days[]"]:checked')).map(el => parseInt(el.value, 10));
+      const occurrence = parseInt(formData.get('occurrence') || '2', 10); // 1,2,3
+      const skipWeekends = document.getElementById('skipWeekends')?.checked === true;
+
+      const patternData = {
+        occurrence,
+        selectedDays,
+        skipWeekends,
+        startTime: formData.get('startTime'),
+        endTime: formData.get('endTime'),
+        applyForMonth: formData.get('applyForMonth') === 'on',
+        careProviderId
+      };
+
+      if (patternData.startTime >= patternData.endTime) {
+        alert('Start time must be before end time');
+        return;
+      }
+
+      const submitBtn = patternForm.querySelector('button[type="submit"]');
+      const originalText = submitBtn.innerHTML;
+      submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+      submitBtn.disabled = true;
+
+      fetch('/admin-control-panel-x7k9m2/availability/create-pattern', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(patternData)
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          alert(`Successfully created ${data.created_count} availability slots!`);
+          if (data.conflicts && data.conflicts.length > 0) {
+            alert(`Note: ${data.conflicts.length} slots were skipped due to appointment conflicts.`);
+          }
+          patternForm.reset();
+        } else {
+          if (data.suggested_ranges) {
+            let message = `Error: ${data.message}\n\nSuggested available time ranges for today:\n`;
+            data.suggested_ranges.forEach(range => { message += `${range.start} - ${range.end}\n`; });
+            alert(message);
+          } else {
+            alert('Error: ' + data.message);
+          }
+        }
+      })
+      .catch(() => { alert('An error occurred while creating availability pattern'); })
+      .finally(() => { submitBtn.disabled = false; submitBtn.innerHTML = originalText; });
+    });
+  });
+})();
+</script>
+

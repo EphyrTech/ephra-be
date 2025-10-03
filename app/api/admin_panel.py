@@ -6,25 +6,56 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import pendulum
-from fastapi import (APIRouter, Depends, Form, HTTPException, Request,
-                     Response, status)
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.admin_auth import (AdminSession, admin_sessions,
-                                 authenticate_superadmin, create_admin_session,
-                                 get_admin_session, get_client_ip,
-                                 get_user_agent, invalidate_admin_session,
-                                 log_admin_action)
+from app.core.admin_auth import (
+    AdminSession,
+    admin_sessions,
+    authenticate_superadmin,
+    create_admin_session,
+    get_admin_session,
+    get_client_ip,
+    get_user_agent,
+    invalidate_admin_session,
+    log_admin_action,
+)
 from app.core.config import settings
 from app.db.database import get_db
-from app.db.models import (Appointment, AppointmentStatus, Availability,
-                           CareProviderProfile, Journal, MediaFile,
-                           PersonalJournal, SpecialistType, User, UserRole,
-                           generate_uuid)
+from app.db.models import (
+    Appointment,
+    AppointmentStatus,
+    Availability,
+    CareProviderProfile,
+    Journal,
+    MediaFile,
+    PersonalJournal,
+    SpecialistType,
+    User,
+    UserRole,
+    generate_uuid,
+)
 from app.middleware import invalidate_cache
+from app.core.admin_auth import require_admin_session
+from app.services.user_service import CareProviderUser
+import uuid
+from datetime import datetime as _dt, time
+from app.db.models import Availability, CareProviderProfile, SpecialistType
+from app.core.admin_auth import (
+    cleanup_expired_sessions,
+    get_admin_session,
+    invalidate_admin_session,
+)
+from app.core.security import get_password_hash
+from app.core.admin_auth import get_recent_audit_entries
+from app.core.admin_auth import require_admin_session
+from app.services.appointment_service import AppointmentCreate, AppointmentService
+
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +76,6 @@ def get_admin_session_or_redirect(request: Request):
     """Get admin session or return redirect response"""
     try:
         # Clean up expired sessions periodically
-        from app.core.admin_auth import (cleanup_expired_sessions,
-                                         get_admin_session,
-                                         invalidate_admin_session)
         cleanup_expired_sessions()
 
         # Get session ID from cookie
@@ -89,10 +117,10 @@ async def admin_login(
     """Handle admin login"""
     ip_address = get_client_ip(request)
     user_agent = get_user_agent(request)
-    
+
     # Log login attempt
     logger.info(f"Admin login attempt - Username: {username}, IP: {ip_address}")
-    
+
     if not authenticate_superadmin(username, password, db):
         logger.warning(f"Failed admin login attempt - Username: {username}, IP: {ip_address}")
         return templates.TemplateResponse("admin/login.html", {
@@ -102,7 +130,7 @@ async def admin_login(
     user = db.query(User).filter(User.display_name == username).first()
     # Create session
     session_id = create_admin_session(username, ip_address, user_agent, user.id)
-    
+
     # Set secure cookie
     response = RedirectResponse(url="/admin-control-panel-x7k9m2/dashboard", status_code=302)
     response.set_cookie(
@@ -113,7 +141,7 @@ async def admin_login(
         secure=settings.ENV == "prod",
         samesite="strict"
     )
-    
+
     logger.info(f"Successful admin login - Username: {username}, IP: {ip_address}, Session: {session_id}")
     return response
 
@@ -157,7 +185,7 @@ async def admin_dashboard(
         return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
 
     log_admin_action(session, "VIEW_DASHBOARD")
-    
+
     # Get statistics
     stats = {
         "total_users": db.query(User).count(),
@@ -165,7 +193,7 @@ async def admin_dashboard(
         "total_journals": db.query(Journal).count(),
         "total_appointments": db.query(Appointment).count(),
     }
-    
+
     # Get recent activity (last 10 users)
     recent_activity = db.query(User).order_by(desc(User.created_at)).limit(10).all()
     activity_list = []
@@ -177,7 +205,7 @@ async def admin_dashboard(
             "created_at": user.created_at,
             "status": "active" if user.is_active else "inactive"
         })
-    
+
     # System information
     system_info = {
         "environment": settings.ENV,
@@ -186,10 +214,10 @@ async def admin_dashboard(
         "server_time": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
         "uptime": "N/A"  # Could be calculated if needed
     }
-    
+
     # Chart data (last 7 days)
     chart_data = get_dashboard_chart_data(db)
-    
+
     response = templates.TemplateResponse("admin/dashboard.html", {
         "request": request,
         "session": session,
@@ -205,10 +233,10 @@ def get_dashboard_chart_data(db: Session) -> Dict[str, Any]:
     # User registration trend (last 7 days)
     end_date = datetime.utcnow().date()
     start_date = end_date - timedelta(days=6)
-    
+
     user_registration_data = []
     user_registration_labels = []
-    
+
     for i in range(7):
         date = start_date + timedelta(days=i)
         count = db.query(User).filter(
@@ -216,11 +244,11 @@ def get_dashboard_chart_data(db: Session) -> Dict[str, Any]:
         ).count()
         user_registration_data.append(count)
         user_registration_labels.append(date.strftime("%m/%d"))
-    
+
     # Journal entries (last 7 days)
     journal_entries_data = []
     journal_entries_labels = []
-    
+
     for i in range(7):
         date = start_date + timedelta(days=i)
         count = db.query(Journal).filter(
@@ -228,7 +256,7 @@ def get_dashboard_chart_data(db: Session) -> Dict[str, Any]:
         ).count()
         journal_entries_data.append(count)
         journal_entries_labels.append(date.strftime("%m/%d"))
-    
+
     return {
         "user_registration_labels": user_registration_labels,
         "user_registration_data": user_registration_data,
@@ -251,9 +279,9 @@ async def admin_users_list(
         return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
 
     log_admin_action(session, "VIEW_USERS", {"page": page, "search": search})
-    
+
     query = db.query(User)
-    
+
     if search:
         query = query.filter(
             (User.email.ilike(f"%{search}%")) |
@@ -261,12 +289,12 @@ async def admin_users_list(
             (User.first_name.ilike(f"%{search}%")) |
             (User.last_name.ilike(f"%{search}%"))
         )
-    
+
     total = query.count()
     users = query.offset((page - 1) * per_page).limit(per_page).all()
-    
+
     total_pages = (total + per_page - 1) // per_page
-    
+
     return templates.TemplateResponse("admin/users_list.html", {
         "request": request,
         "session": session,
@@ -281,16 +309,16 @@ async def admin_users_list(
 @router.get("/sessions", response_class=HTMLResponse)
 async def admin_sessions_list(
     request: Request,
-    
+
 ):
     """List active admin sessions"""
     # Check authentication
     session = get_admin_session_or_redirect(request)
     if not session:
         return RedirectResponse(url="/admin-control-panel-x7k9m2/login", status_code=302)
-    
+
     log_admin_action(session, "VIEW_SESSIONS")
-    
+
     return templates.TemplateResponse("admin/sessions.html", {
         "request": request,
         "session": session,
@@ -356,10 +384,6 @@ async def admin_user_create(
         user_data = await request.json()
         log_admin_action(session, "CREATE_USER", {"email": user_data.get("email")})
 
-        import uuid
-
-        from app.core.security import get_password_hash
-        from app.db.models import CareProviderProfile, SpecialistType
 
         # Create user
         new_user = User(
@@ -463,7 +487,6 @@ async def admin_activate_user(
 ):
     """Activate user"""
     # Check authentication for API endpoints
-    from app.core.admin_auth import require_admin_session
     session = require_admin_session(request)
 
     log_admin_action(session, "ACTIVATE_USER", {"user_id": user_id})
@@ -488,7 +511,6 @@ async def admin_deactivate_user(
 ):
     """Deactivate user"""
     # Check authentication for API endpoints
-    from app.core.admin_auth import require_admin_session
     session = require_admin_session(request)
 
     log_admin_action(session, "DEACTIVATE_USER", {"user_id": user_id})
@@ -513,18 +535,13 @@ async def admin_delete_user(
 ):
     """Delete user (soft delete by deactivating)"""
     # Check authentication for API endpoints
-    from app.core.admin_auth import require_admin_session
+
     session = require_admin_session(request)
 
     log_admin_action(session, "DELETE_USER", {"user_id": user_id})
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        return {"success": False, "message": "User not found"}
-
-    # Soft delete by deactivating
-    user.is_active = False
-    db.commit()
+    user_service = CareProviderUser(db, log_to_user_id=user_id)
+    await user_service.suspend()
 
     # Invalidate cache after user deletion
     invalidate_cache()
@@ -564,7 +581,6 @@ async def admin_user_edit(
 ):
     """Update user"""
     # Check authentication for API endpoints
-    from app.core.admin_auth import require_admin_session
     session = require_admin_session(request)
 
     # Get form data
@@ -597,6 +613,62 @@ async def admin_user_edit(
     if "is_active" in body:
         user.is_active = body["is_active"]
 
+    # If/when role is care_provider, upsert care provider profile and availability
+    try:
+        role_value = user.role.value if hasattr(user.role, "value") else str(user.role)
+        if role_value == "care_provider":
+
+            # Upsert care provider profile
+            cpp = db.query(CareProviderProfile).filter(CareProviderProfile.user_id == user_id).first()
+            if not cpp:
+                cpp = CareProviderProfile(id=str(uuid.uuid4()), user_id=user.id)
+                # Ensure NOT NULL specialty with a safe default
+                try:
+                    cpp.specialty = SpecialistType(body.get("specialty") or "mental")
+                except Exception:
+                    cpp.specialty = SpecialistType.MENTAL
+                db.add(cpp)
+
+            specialty_in = body.get("specialty")
+            if specialty_in:
+                try:
+                    cpp.specialty = SpecialistType(specialty_in)
+                except Exception:
+                    pass
+            if "license_number" in body:
+                cpp.license_number = body.get("license_number")
+            if "hourly_rate" in body:
+                # Expect cents (int). If string/float provided, best-effort cast.
+                hr = body.get("hourly_rate")
+                try:
+                    cpp.hourly_rate = int(hr) if hr is not None else None
+                except Exception:
+                    cpp.hourly_rate = None
+            if "bio" in body:
+                cpp.bio = body.get("bio")
+
+            # Availability slots: replace all if provided
+            if isinstance(body.get("availability_slots"), list):
+                # Clear existing
+                db.query(Availability).filter(Availability.care_provider_id == cpp.id).delete(synchronize_session=False)
+                for slot in body["availability_slots"]:
+                    try:
+                        st = _dt.fromisoformat(slot["start_time"]) if slot.get("start_time") else None
+                        et = _dt.fromisoformat(slot["end_time"]) if slot.get("end_time") else None
+                        if st and et:
+                            db.add(Availability(
+                                id=str(uuid.uuid4()),
+                                care_provider_id=cpp.id,
+                                start_time=st,
+                                end_time=et,
+                                is_available=bool(slot.get("is_available", True))
+                            ))
+                    except Exception:
+                        continue
+    except Exception:
+        # Don't fail whole user update if CP upsert encounters an issue
+        pass
+
     # Update timestamps
     user.updated_at = datetime.utcnow()
 
@@ -613,6 +685,102 @@ async def admin_user_edit(
         "role": user.role,
         "is_active": user.is_active
     }}
+
+
+@router.get("/users/{user_id}/details")
+async def admin_get_user_details(
+    request: Request,
+    user_id: str,
+    db: Session = Depends(get_db)
+):
+    """Return full editable payload for a user, including care provider profile and availability.
+
+    If any section is missing in DB, return empty/default values so the UI can edit and save.
+    """
+    # Check authentication for API endpoints
+    from app.core.admin_auth import require_admin_session
+    session = require_admin_session(request)
+
+    log_admin_action(session, "VIEW_USER_DETAILS", {"user_id": user_id})
+
+    # Load user with related care provider profile
+    user: Optional[User] = (
+        db.query(User)
+        .options(joinedload(User.care_provider_profile))
+        .filter(User.id == user_id)
+        .first()
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Base user info (align keys with Create New User form where applicable)
+    user_info: Dict[str, Any] = {
+        "id": user.id,
+        "email": user.email or "",
+        "first_name": user.first_name or "",
+        "last_name": user.last_name or "",
+        "name": user.name or "",  # Display Name field on the Create form
+        "phone_number": user.phone_number or "",
+        "role": (user.role.value if hasattr(user.role, "value") else str(user.role)) if user.role else "user",
+        "is_active": bool(user.is_active),
+    }
+
+    # Care Provider Information (default empty values when missing)
+    cp_defaults: Dict[str, Any] = {
+        "specialty": "",
+        "bio": "",
+        "hourly_rate": None,  # stored in cents
+        "license_number": "",
+        "years_experience": None,
+        "education": "",
+        "certifications": "",
+        "is_accepting_patients": True,
+    }
+
+    care_provider_info: Dict[str, Any]
+    availability_slots: List[Dict[str, Any]] = []
+
+    if user.care_provider_profile:
+        cpp: CareProviderProfile = user.care_provider_profile
+        care_provider_info = {
+            "id": cpp.id,
+            "user_id": cpp.user_id,
+            "specialty": (cpp.specialty.value if hasattr(cpp.specialty, "value") else str(cpp.specialty)) if cpp.specialty else "",
+            "bio": cpp.bio or "",
+            "hourly_rate": cpp.hourly_rate,  # cents
+            "license_number": cpp.license_number or "",
+            "years_experience": cpp.years_experience,
+            "education": cpp.education or "",
+            "certifications": cpp.certifications or "",
+            "is_accepting_patients": True if cpp.is_accepting_patients is None else bool(cpp.is_accepting_patients),
+        }
+
+        # Availability linked via CareProviderProfile
+        avail_list = (
+            db.query(Availability)
+            .filter(Availability.care_provider_id == cpp.id)
+            .order_by(Availability.start_time.asc())
+            .all()
+        )
+        for av in avail_list:
+            availability_slots.append({
+                "id": av.id,
+                "start_time": av.start_time.isoformat() if av.start_time else None,
+                "end_time": av.end_time.isoformat() if av.end_time else None,
+                "is_available": True if av.is_available is None else bool(av.is_available),
+            })
+    else:
+        # No care provider profile yet
+        care_provider_info = cp_defaults.copy()
+        care_provider_info.update({"id": None, "user_id": user.id})
+
+    payload = {
+        "user": user_info,
+        "care_provider": care_provider_info,
+        "availability": availability_slots,  # empty list if none
+    }
+
+    return {"success": True, "data": payload}
 
 @router.get("/journals", response_class=HTMLResponse)
 async def admin_journals_list(
@@ -905,18 +1073,13 @@ async def admin_appointment_create(
     db: Session = Depends(get_db)
 ):
     """Create new appointment"""
-    # Check authentication for API endpoints
-    from app.core.admin_auth import require_admin_session
-    from app.services.appointment_service import (AppointmentCreate,
-                                                  AppointmentService)
-
 
     try:
 
         session = require_admin_session(request, db)
 
         form_data = await request.form()
-        
+
         appointment_data = AppointmentCreate.model_validate(form_data)
 
         apse = AppointmentService(db)
@@ -982,7 +1145,6 @@ async def admin_delete_journal(
 ):
     """Delete journal entry"""
     # Check authentication for API endpoints
-    from app.core.admin_auth import require_admin_session
     session = require_admin_session(request)
 
     log_admin_action(session, "DELETE_JOURNAL", {"journal_id": journal_id})
@@ -1034,8 +1196,6 @@ async def admin_update_appointment_status(
     db: Session = Depends(get_db)
 ):
     """Update appointment status"""
-    # Check authentication for API endpoints
-    from app.core.admin_auth import require_admin_session
     session = require_admin_session(request)
 
     body = await request.json()
@@ -1069,8 +1229,6 @@ async def admin_delete_appointment(
     db: Session = Depends(get_db)
 ):
     """Delete appointment"""
-    # Check authentication for API endpoints
-    from app.core.admin_auth import require_admin_session
     session = require_admin_session(request)
 
     log_admin_action(session, "DELETE_APPOINTMENT", {"appointment_id": appointment_id})
@@ -1094,10 +1252,8 @@ async def admin_terminate_session(
     request: Request
 ):
     """Terminate a specific admin session"""
-    # Check authentication for API endpoints
-    from app.core.admin_auth import require_admin_session
     session = require_admin_session(request)
-    
+
     log_admin_action(session, "TERMINATE_SESSION", {"terminated_session_id": session_id})
 
     if invalidate_admin_session(session_id):
@@ -1131,10 +1287,8 @@ async def admin_terminate_other_sessions(
 @router.get("/audit-log/live")
 async def admin_audit_log_live(
     request: Request,
-    
+
 ):
-    """Get live audit log entries for real-time monitoring"""
-    from app.core.admin_auth import get_recent_audit_entries
     recent_entries = get_recent_audit_entries(10)
     return {"entries": recent_entries}
 
@@ -1223,8 +1377,6 @@ async def admin_toggle_availability(
     db: Session = Depends(get_db)
 ):
     """Toggle availability slot status"""
-    # Check authentication for API endpoints
-    from app.core.admin_auth import require_admin_session
     session = require_admin_session(request)
 
     body = await request.json()
@@ -1254,8 +1406,6 @@ async def admin_delete_availability(
     db: Session = Depends(get_db)
 ):
     """Delete availability slot"""
-    # Check authentication for API endpoints
-    from app.core.admin_auth import require_admin_session
     session = require_admin_session(request)
 
     log_admin_action(session, "DELETE_AVAILABILITY", {"slot_id": slot_id})
@@ -1295,8 +1445,6 @@ async def admin_create_availability_pattern(
     db: Session = Depends(get_db)
 ):
     """Create availability pattern for a care provider"""
-    # Check authentication for API endpoints
-    from app.core.admin_auth import require_admin_session
     session = require_admin_session(request)
 
     try:
@@ -1309,10 +1457,24 @@ async def admin_create_availability_pattern(
         from app.db.models import Appointment, AppointmentStatus
 
         care_provider_id = pattern_data["careProviderId"]
-        day_of_week = pattern_data["dayOfWeek"]  # 0=Monday, 6=Sunday
+        # New recurrence options
+        occurrence = int(pattern_data.get("occurrence", 2))  # 1=daily, 2=weekly, 3=biweekly
+        selected_days = pattern_data.get("selectedDays") or []  # list of 0..6 (Mon..Sun)
+        skip_weekends = bool(pattern_data.get("skipWeekends", False))
         start_time_str = pattern_data["startTime"]  # "HH:MM"
         end_time_str = pattern_data["endTime"]  # "HH:MM"
         apply_for_month = pattern_data.get("applyForMonth", False)
+
+        # Backward compatibility: support legacy single dayOfWeek
+        if (not selected_days) and ("dayOfWeek" in pattern_data):
+            try:
+                selected_days = [int(pattern_data["dayOfWeek"])]
+            except Exception:
+                selected_days = []
+        try:
+            selected_days = [int(x) for x in selected_days if x is not None]
+        except Exception:
+            selected_days = []
 
         # Get care provider profile
         user = db.query(User).filter(User.id == care_provider_id).first()
@@ -1340,10 +1502,26 @@ async def admin_create_availability_pattern(
         else:
             end_date = start_date
 
-        # Find all dates matching the day of week
+        # Helpers to decide included dates
+        def _week_index(sd, cd):
+            return ((cd - sd).days) // 7
+
+        def _include_date(cd):
+            # Skip weekends entirely if requested
+            if skip_weekends and cd.weekday() >= 5:
+                return False
+            # Respect specific selected days if provided
+            if selected_days and cd.weekday() not in selected_days:
+                return False
+            # Every 2 weeks: only include dates in even offset weeks from start
+            if occurrence == 3:
+                return _week_index(start_date, cd) % 2 == 0
+            # For daily/weekly, inclusion is governed by selected_days above
+            return True
+
         current_date = start_date
         while current_date <= end_date:
-            if current_date.weekday() == day_of_week:
+            if _include_date(current_date):
                 # Create datetime objects for this date
                 slot_start = datetime.combine(current_date, time(start_hour, start_minute))
                 slot_end = datetime.combine(current_date, time(end_hour, end_minute))
@@ -1420,8 +1598,6 @@ async def admin_edit_availability(
     db: Session = Depends(get_db)
 ):
     """Edit an availability slot"""
-    # Check authentication for API endpoints
-    from app.core.admin_auth import require_admin_session
     session = require_admin_session(request)
 
     try:
@@ -1581,17 +1757,16 @@ async def admin_create_single_availability(
 ):
     """Create a single availability slot"""
     # Check authentication for API endpoints
-    from app.core.admin_auth import require_admin_session
+    
+
+    
+
     session = require_admin_session(request)
 
     try:
         slot_data = await request.json()
         log_admin_action(session, "CREATE_SINGLE_AVAILABILITY", slot_data)
 
-        import uuid
-        from datetime import datetime, time
-
-        from app.db.models import Appointment, AppointmentStatus
 
         care_provider_id = slot_data["careProviderId"]
         date_str = slot_data["date"]  # "YYYY-MM-DD"

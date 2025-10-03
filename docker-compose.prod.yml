@@ -50,6 +50,14 @@ services:
       - MAILGUN_BASE_URL=${MAILGUN_BASE_URL:-https://api.eu.mailgun.net/v3}
       - MAILGUN_WEBHOOK_SIGNING_KEY=${MAILGUN_WEBHOOK_SIGNING_KEY:-}
       - APPOINTMENT_REMINDER_TEMPLATE=${APPOINTMENT_REMINDER_TEMPLATE:-15min_before_appointment}
+      # Additional Logto Configuration
+      - LOGTO_API_RESOURCE=${LOGTO_API_RESOURCE}
+      - LOGTO_FE_APP_ID=${LOGTO_FE_APP_ID}
+      - LOGTO_POST_LOGOUT_REDIRECT_URI=${LOGTO_POST_LOGOUT_REDIRECT_URI}
+      - LOGTO_REDIRECT_URI=${LOGTO_REDIRECT_URI}
+      # Role mapping and service configuration
+      - ROLES_MAP_STRING=${ROLES_MAP_STRING}
+      - SERVICE_URL_API=${SERVICE_URL_API}
 
     depends_on:
       db:

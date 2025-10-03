@@ -13,17 +13,17 @@ from app.core.config import settings
 from app.db.database import get_db
 from app.db.models import User, UserRole
 from app.schemas.auth import TokenPayload
-from app.services import logto_service
+from app.services.user_service import BaseUser
 from app.services.logto_service import (
-    LogtoManagerService,
+    LogtoUserManager,
     UserCreateRequest,
-    UserUpdateRequest,
-    UserGetResponse
+    LogtoUserManager
 )
 
 logger = logging.getLogger(__name__)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/token")
+logto_user_manager = LogtoUserManager()
 
 
 async def create_logto_user_for_existing_user(user: User, db: Session) -> bool:
@@ -82,32 +82,23 @@ async def get_current_user_from_auth(
     try:
         # Find user by Logto subject ID
         user = db.query(User).filter(User.logto_user_id == auth.sub).first()
+        
 
         if not user:
             # Auto-create user if they don't exist (following the pattern from auth.py)
             logger.info(f"Creating new user for Logto ID: {auth.sub}")
 
-            # Extract user information from AuthInfo
-            email = auth.email
-            name = auth.name or auth.given_name
-
-            if not email:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Email is required but not provided in token",
-                )
-
-            user = User(
-                email=email,
-                logto_user_id=auth.sub,
-                role=UserRole.USER,
-                hashed_password=None,  # No password for Logto users
-                name=name,
+            logto_user = BaseUser(
+                db=db,
+                logto_user_manager=logto_user_manager,
+                log_to_user_id=auth.sub
             )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-            logger.info(f"Created new user with ID: {user.id}")
+            await logto_user.init()
+
+            await logto_user.upsert_db_user()
+            user = logto_user.current_db_user
+
+            logger.info(f"Created new user with ID: {logto_user.db_user_id}")
 
         # Check if user is active
         if not user.is_active:

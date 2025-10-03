@@ -105,10 +105,10 @@
                             </small>
                         </td>
                         <td>
-                            <small>{{ sess.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                            <small><span class="tz-datetime" data-dt="{{ sess.created_at.isoformat() }}"></span></small>
                         </td>
                         <td>
-                            <small>{{ sess.last_activity.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                            <small><span class="tz-datetime" data-dt="{{ sess.last_activity.isoformat() }}"></span></small>
                             {% set minutes_ago = ((session.last_activity - sess.last_activity).total_seconds() / 60)|int %}
                             {% if minutes_ago < 5 %}
                                 <span class="badge bg-success">Active</span>
@@ -119,7 +119,7 @@
                             {% endif %}
                         </td>
                         <td>
-                            <small>{{ sess.expires_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                            <small><span class="tz-datetime" data-dt="{{ sess.expires_at.isoformat() }}"></span></small>
                             {% set hours_left = ((sess.expires_at - session.last_activity).total_seconds() / 3600)|int %}
                             {% if hours_left > 4 %}
                                 <span class="badge bg-success">{{ hours_left }}h left</span>

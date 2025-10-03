@@ -44,7 +44,7 @@
                     {% for entry in audit_entries %}
                     <tr>
                         <td>
-                            <small class="text-muted">{{ entry.timestamp }}</small>
+                            <small class="text-muted"><span class="tz-datetime" data-dt="{{ entry.timestamp }}"></span></small>
                         </td>
                         <td>
                             <strong>{{ entry.admin_user }}</strong>
@@ -167,8 +167,8 @@ function addLiveLogEntry(entry) {
     const timestamp = new Date().toISOString();
     const logLine = document.createElement('div');
     logLine.innerHTML = `
-        <span class="text-info">[${timestamp}]</span> 
-        <span class="text-warning">${entry.admin_user}@${entry.ip_address}</span> 
+        <span class="text-info">[<span class="tz-datetime" data-dt="${timestamp}"></span>]</span>
+        <span class="text-warning">${entry.admin_user}@${entry.ip_address}</span>
         <span class="text-success">${entry.action}</span>
         ${entry.details ? `<span class="text-muted"> - ${JSON.stringify(entry.details)}</span>` : ''}
     `;
@@ -180,7 +180,9 @@ function addLiveLogEntry(entry) {
     }
     
     liveLogContainer.appendChild(logLine);
-    
+    // Render timezone for newly added entry
+    if (typeof tzRender === 'function') { tzRender(logLine); }
+
     // Keep only last 50 entries
     while (liveLogContainer.children.length > 50) {
         liveLogContainer.removeChild(liveLogContainer.firstChild);

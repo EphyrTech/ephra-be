@@ -99,10 +99,10 @@
                             {% endif %}
                         </td>
                         <td>
-                            <small>{{ user.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                            <small><span class="tz-datetime" data-dt="{{ user.created_at.isoformat() }}"></span></small>
                         </td>
                         <td>
-                            <small class="text-muted">{{ user.updated_at.strftime('%Y-%m-%d %H:%M') if user.updated_at else 'Never' }}</small>
+                            <small class="text-muted">{% if user.updated_at %}<span class="tz-datetime" data-dt="{{ user.updated_at.isoformat() }}"></span>{% else %}Never{% endif %}</small>
                         </td>
                         <td>
                             <div class="btn-group btn-group-sm">

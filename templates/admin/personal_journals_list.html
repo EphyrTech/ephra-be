@@ -45,10 +45,10 @@
                             {% endif %}
                         </td>
                         <td>
-                            <small>{{ journal.entry_datetime.strftime('%Y-%m-%d %H:%M') }}</small>
+                            <small><span class="tz-datetime" data-dt="{{ journal.entry_datetime.isoformat() }}"></span></small>
                         </td>
                         <td>
-                            <small>{{ journal.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                            <small><span class="tz-datetime" data-dt="{{ journal.created_at.isoformat() }}"></span></small>
                         </td>
                         <td>
                             <div class="btn-group btn-group-sm">

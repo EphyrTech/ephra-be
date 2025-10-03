@@ -57,11 +57,11 @@
                     <div class="session-info text-white">
                         <small>
                             <i class="fas fa-user"></i> {{ session.username }}<br>
-                            <i class="fas fa-clock"></i> {{ session.last_activity.strftime('%H:%M:%S') }}<br>
+                            <i class="fas fa-clock"></i> <span class="tz-time" data-dt="{{ session.last_activity.isoformat() }}"></span><br>
                             <i class="fas fa-map-marker-alt"></i> {{ session.ip_address }}
                         </small>
                     </div>
-                    
+
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link {% if request.url.path.endswith('/dashboard') %}active{% endif %}" href="/admin-control-panel-x7k9m2/dashboard">
@@ -170,6 +170,31 @@
             button.disabled = true;
         }
     </script>
+        <script>
+        (function(){
+          function tzRender(root){
+            const r = root || document;
+            const dateFmt = new Intl.DateTimeFormat(undefined, { year:'numeric', month:'2-digit', day:'2-digit' });
+            const timeFmt = new Intl.DateTimeFormat(undefined, { hour:'2-digit', minute:'2-digit', hour12:false });
+            const dtFmt   = new Intl.DateTimeFormat(undefined, { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false });
+            r.querySelectorAll('.tz-date').forEach(el => {
+              const d = el.getAttribute('data-dt'); if (!d) return; el.textContent = dateFmt.format(new Date(d));
+            });
+            r.querySelectorAll('.tz-time').forEach(el => {
+              const d = el.getAttribute('data-dt'); if (!d) return; el.textContent = timeFmt.format(new Date(d));
+            });
+            r.querySelectorAll('.tz-datetime').forEach(el => {
+              const d = el.getAttribute('data-dt'); if (!d) return; el.textContent = dtFmt.format(new Date(d));
+            });
+            r.querySelectorAll('input.tz-datetime-input').forEach(el => {
+              const d = el.getAttribute('data-dt'); if (!d) return; el.value = dtFmt.format(new Date(d));
+            });
+          }
+          window.tzRender = tzRender;
+          document.addEventListener('DOMContentLoaded', () => tzRender());
+        })();
+        </script>
+
     {% block scripts %}{% endblock %}
 </body>
 </html>

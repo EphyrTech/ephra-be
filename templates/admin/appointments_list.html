@@ -44,8 +44,8 @@
                             <br><small class="text-muted">{{ appointment.care_provider.email }}</small>
                         </td>
                         <td>
-                            <strong>{{ appointment.start_time.strftime('%Y-%m-%d') }}</strong>
-                            <br><small>{{ appointment.start_time.strftime('%H:%M') }} - {{ appointment.end_time.strftime('%H:%M') }}</small>
+                            <strong><span class="tz-date" data-dt="{{ appointment.start_time.isoformat() }}"></span></strong>
+                            <br><small><span class="tz-time" data-dt="{{ appointment.start_time.isoformat() }}"></span> - <span class="tz-time" data-dt="{{ appointment.end_time.isoformat() }}"></span></small>
                         </td>
                         <td>
                             {% set duration = (appointment.end_time - appointment.start_time).total_seconds() / 60 %}
@@ -74,7 +74,7 @@
                             {% endif %}
                         </td>
                         <td>
-                            <small>{{ appointment.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                            <small class="tz-datetime" data-dt="{{ appointment.created_at.isoformat() }}"></small>
                         </td>
                         <td>
                             <div class="btn-group btn-group-sm">
@@ -153,6 +153,26 @@
 
 {% block scripts %}
 <script>
+// Render UTC timestamps as viewer-local
+function tzRender() {
+  const dateFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' });
+  const timeFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  const dtFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+  document.querySelectorAll('.tz-date').forEach(el => {
+    const d = el.getAttribute('data-dt');
+    if (d) el.textContent = dateFmt.format(new Date(d));
+  });
+  document.querySelectorAll('.tz-time').forEach(el => {
+    const d = el.getAttribute('data-dt');
+    if (d) el.textContent = timeFmt.format(new Date(d));
+  });
+  document.querySelectorAll('.tz-datetime').forEach(el => {
+    const d = el.getAttribute('data-dt');
+    if (d) el.textContent = dtFmt.format(new Date(d));
+  });
+}
+document.addEventListener('DOMContentLoaded', tzRender);
+
 function updateAppointmentStatus(appointmentId, newStatus) {
     const statusText = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
     if (confirm(`Are you sure you want to mark this appointment as ${statusText}?`)) {

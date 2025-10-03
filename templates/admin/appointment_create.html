@@ -53,14 +53,16 @@
                     <div class="row">
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="start_time" class="form-label">Start Date & Time *</label>
-                                <input type="datetime-local" class="form-control" id="start_time" name="start_time" required>
+                                <label for="start_time_local" class="form-label">Start Date & Time *</label>
+                                <input type="datetime-local" class="form-control" id="start_time_local" name="start_time_local" required>
+                                <input type="hidden" id="start_time" name="start_time">
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="end_time" class="form-label">End Date & Time *</label>
-                                <input type="datetime-local" class="form-control" id="end_time" name="end_time" required>
+                                <label for="end_time_local" class="form-label">End Date & Time *</label>
+                                <input type="datetime-local" class="form-control" id="end_time_local" name="end_time_local" required>
+                                <input type="hidden" id="end_time" name="end_time">
                             </div>
                         </div>
                     </div>
@@ -147,36 +149,50 @@
 
 {% block scripts %}
 <script>
-// Set minimum datetime to now
+// Helpers to get elements
+const startLocal = document.getElementById('start_time_local');
+const endLocal = document.getElementById('end_time_local');
+const startHidden = document.getElementById('start_time');
+const endHidden = document.getElementById('end_time');
+
+// Set minimum datetime to now (for local inputs)
 const now = new Date();
 const minDateTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-document.getElementById('start_time').min = minDateTime;
-document.getElementById('end_time').min = minDateTime;
+startLocal.min = minDateTime;
+endLocal.min = minDateTime;
 
 // Auto-calculate end time when start time changes
-document.getElementById('start_time').addEventListener('change', function() {
+startLocal.addEventListener('change', function() {
     const startDateTime = this.value;
     if (startDateTime) {
         const startDate = new Date(startDateTime);
-
         // Add 1 hour by default
         const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
         const endDateTime = new Date(endDate.getTime() - endDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-
-        document.getElementById('end_time').value = endDateTime;
-        document.getElementById('end_time').min = endDateTime;
+        endLocal.value = endDateTime;
+        endLocal.min = endDateTime;
     }
 });
 
-// Form validation
+// Form validation + convert to UTC before submit
 document.querySelector('form').addEventListener('submit', function(e) {
-    const startDateTime = document.getElementById('start_time').value;
-    const endDateTime = document.getElementById('end_time').value;
+    const startVal = startLocal.value;
+    const endVal = endLocal.value;
 
-    if (startDateTime && endDateTime && new Date(startDateTime) >= new Date(endDateTime)) {
+    if (startVal && endVal && new Date(startVal) >= new Date(endVal)) {
         e.preventDefault();
         alert('End time must be after start time');
         return false;
+    }
+
+    // Convert local datetimes to UTC ISO strings for backend
+    if (startVal) {
+        const d = new Date(startVal);
+        startHidden.value = d.toISOString(); // e.g., 2025-09-28T08:00:00.000Z
+    }
+    if (endVal) {
+        const d = new Date(endVal);
+        endHidden.value = d.toISOString();
     }
 });
 </script>

@@ -64,13 +64,13 @@
                         <table class="table table-borderless">
                             <tr>
                                 <td><strong>Created:</strong></td>
-                                <td>{{ journal.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td><span class="tz-datetime" data-dt="{{ journal.created_at.isoformat() }}"></span></td>
                             </tr>
                             <tr>
                                 <td><strong>Updated:</strong></td>
                                 <td>
                                     {% if journal.updated_at %}
-                                        {{ journal.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                                        <span class="tz-datetime" data-dt="{{ journal.updated_at.isoformat() }}"></span>
                                     {% else %}
                                         Never
                                     {% endif %}

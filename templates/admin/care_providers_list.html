@@ -66,7 +66,7 @@
                             {% endif %}
                         </td>
                         <td>
-                            <small>{{ provider.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                            <small><span class="tz-datetime" data-dt="{{ provider.created_at.isoformat() }}"></span></small>
                         </td>
                         <td>
                             <div class="btn-group btn-group-sm">

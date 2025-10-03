@@ -44,11 +44,11 @@
                             </tr>
                             <tr>
                                 <td><strong>Date:</strong></td>
-                                <td>{{ appointment.start_time.strftime('%Y-%m-%d') }}</td>
+                                <td><span class="tz-date" data-dt="{{ appointment.start_time.isoformat() }}"></span></td>
                             </tr>
                             <tr>
                                 <td><strong>Time:</strong></td>
-                                <td>{{ appointment.start_time.strftime('%H:%M') }} - {{ appointment.end_time.strftime('%H:%M') }}</td>
+                                <td><span class="tz-time" data-dt="{{ appointment.start_time.isoformat() }}"></span> - <span class="tz-time" data-dt="{{ appointment.end_time.isoformat() }}"></span></td>
                             </tr>
                             <tr>
                                 <td><strong>Duration:</strong></td>
@@ -91,13 +91,13 @@
                         <table class="table table-borderless">
                             <tr>
                                 <td><strong>Created:</strong></td>
-                                <td>{{ appointment.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td><span class="tz-datetime" data-dt="{{ appointment.created_at.isoformat() }}"></span></td>
                             </tr>
                             <tr>
                                 <td><strong>Updated:</strong></td>
                                 <td>
                                     {% if appointment.updated_at %}
-                                        {{ appointment.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                                        <span class="tz-datetime" data-dt="{{ appointment.updated_at.isoformat() }}"></span>
                                     {% else %}
                                         Never
                                     {% endif %}
@@ -218,6 +218,26 @@
 
 {% block scripts %}
 <script>
+// Render UTC timestamps as viewer-local
+function tzRender() {
+  const dateFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' });
+  const timeFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  const dtFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+  document.querySelectorAll('.tz-date').forEach(el => {
+    const d = el.getAttribute('data-dt');
+    if (d) el.textContent = dateFmt.format(new Date(d));
+  });
+  document.querySelectorAll('.tz-time').forEach(el => {
+    const d = el.getAttribute('data-dt');
+    if (d) el.textContent = timeFmt.format(new Date(d));
+  });
+  document.querySelectorAll('.tz-datetime').forEach(el => {
+    const d = el.getAttribute('data-dt');
+    if (d) el.textContent = dtFmt.format(new Date(d));
+  });
+}
+document.addEventListener('DOMContentLoaded', tzRender);
+
 function updateAppointmentStatus(appointmentId, newStatus) {
     const statusText = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
     if (confirm(`Are you sure you want to mark this appointment as ${statusText}?`)) {

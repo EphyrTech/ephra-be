@@ -1,9 +1,10 @@
 """Appointment service for business logic"""
 
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
-import uuid
+
 import pendulum
 from sqlalchemy.orm import Session
 
@@ -77,29 +78,39 @@ class AppointmentService:
         else:
             raise PermissionError("Insufficient permissions to create appointments")
 
-        # Validate appointment time
-        self._validate_appointment_time(
-            appointment_data.start_time, appointment_data.end_time
+        # Normalize times to UTC before any checks or persistence
+        start_utc = (
+            appointment_data.start_time.astimezone(timezone.utc)
+            if appointment_data.start_time.tzinfo is not None
+            else appointment_data.start_time.replace(tzinfo=timezone.utc)
         )
+        end_utc = (
+            appointment_data.end_time.astimezone(timezone.utc)
+            if appointment_data.end_time.tzinfo is not None
+            else appointment_data.end_time.replace(tzinfo=timezone.utc)
+        )
+
+        # Validate appointment time (using UTC times)
+        self._validate_appointment_time(start_utc, end_utc)
 
         # Check care provider availability only for regular users booking appointments
         # Care providers can create appointments at any time for their patients (they manage their own schedule)
         if current_user.role == UserRole.USER:
             self._check_care_provider_availability(
-                care_provider_id, appointment_data.start_time, appointment_data.end_time
+                care_provider_id, start_utc, end_utc
             )
 
         # Check for conflicts (always check to prevent double-booking)
         self._check_appointment_conflicts(
-            care_provider_id, appointment_data.start_time, appointment_data.end_time
+            care_provider_id, start_utc, end_utc
         )
 
-        # Create appointment
+        # Create appointment (store in UTC)
         appointment = Appointment(
             user_id=user_id,
             care_provider_id=care_provider_id,
-            start_time=appointment_data.start_time,
-            end_time=appointment_data.end_time,
+            start_time=start_utc,
+            end_time=end_utc,
             status=AppointmentStatus.PENDING,
             meeting_link=appointment_data.meeting_link or self._generate_meeting_link(),
             notes=appointment_data.notes,
@@ -592,20 +603,32 @@ class AppointmentService:
         if appointment.status == AppointmentStatus.COMPLETED:
             raise BusinessRuleError("Cannot reschedule a completed appointment")
 
-        # Check for conflicts with new time
+        # Normalize new times to UTC
+        start_utc = (
+            reschedule_data.start_time.astimezone(timezone.utc)
+            if reschedule_data.start_time.tzinfo is not None
+            else reschedule_data.start_time.replace(tzinfo=timezone.utc)
+        )
+        end_utc = (
+            reschedule_data.end_time.astimezone(timezone.utc)
+            if reschedule_data.end_time.tzinfo is not None
+            else reschedule_data.end_time.replace(tzinfo=timezone.utc)
+        )
+
+        # Check for conflicts with new time (in UTC)
         self._check_appointment_conflicts(
             appointment.care_provider_id,
-            reschedule_data.start_time,
-            reschedule_data.end_time,
+            start_utc,
+            end_utc,
             exclude_appointment_id=appointment_id
         )
 
         # Cancel existing reminder email if scheduled
         self._cancel_reminder_email(appointment)
 
-        # Update appointment times
-        appointment.start_time = reschedule_data.start_time
-        appointment.end_time = reschedule_data.end_time
+        # Update appointment times (store in UTC)
+        appointment.start_time = start_utc
+        appointment.end_time = end_utc
         appointment.reminder_minutes = reschedule_data.reminder_minutes or appointment.reminder_minutes
         appointment.updated_at = datetime.now(timezone.utc)
 

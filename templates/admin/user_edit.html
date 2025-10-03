@@ -27,14 +27,14 @@
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="email" class="form-label">Email Address *</label>
-                                <input type="email" class="form-control" id="email" name="email" 
+                                <input type="email" class="form-control" id="email" name="email"
                                        value="{{ user.email }}" required>
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="full_name" class="form-label">Full Name</label>
-                                <input type="text" class="form-control" id="full_name" name="full_name" 
+                                <input type="text" class="form-control" id="full_name" name="full_name"
                                        value="{{ user.full_name or '' }}">
                             </div>
                         </div>
@@ -73,7 +73,11 @@
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label class="form-label">Created</label>
-                                <input type="text" class="form-control" value="{{ user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else 'N/A' }}" readonly>
+                                {% if user.created_at %}
+                                <input type="text" class="form-control tz-datetime-input" data-dt="{{ user.created_at.isoformat() }}" value="" readonly>
+                                {% else %}
+                                <input type="text" class="form-control" value="N/A" readonly>
+                                {% endif %}
                                 <small class="form-text text-muted">This field cannot be changed</small>
                             </div>
                         </div>
@@ -83,18 +87,70 @@
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label class="form-label">Last Login</label>
-                                <input type="text" class="form-control" value="{{ user.last_login.strftime('%Y-%m-%d %H:%M') if user.last_login else 'Never' }}" readonly>
+                                {% if user.last_login %}
+                                <input type="text" class="form-control tz-datetime-input" data-dt="{{ user.last_login.isoformat() }}" value="" readonly>
+                                {% else %}
+                                <input type="text" class="form-control" value="Never" readonly>
+                                {% endif %}
                                 <small class="form-text text-muted">This field cannot be changed</small>
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label class="form-label">Last Updated</label>
-                                <input type="text" class="form-control" value="{{ user.updated_at.strftime('%Y-%m-%d %H:%M') if user.updated_at else 'Never' }}" readonly>
+                                {% if user.updated_at %}
+                                <input type="text" class="form-control tz-datetime-input" data-dt="{{ user.updated_at.isoformat() }}" value="" readonly>
+                                {% else %}
+                                <input type="text" class="form-control" value="Never" readonly>
+                                {% endif %}
                                 <small class="form-text text-muted">This field will be updated automatically</small>
                             </div>
                         </div>
                     </div>
+
+
+                        <!-- Care Provider specific fields (visible when role is care_provider) -->
+                        <div id="careProviderFields" style="display: none;">
+                            <hr>
+                            <h6 class="text-info">Care Provider Information</h6>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="specialty" class="form-label">Specialty</label>
+                                        <select class="form-select" id="specialty" name="specialty">
+                                            <option value="">Select Specialty</option>
+                                            <option value="mental">Mental Health</option>
+                                            <option value="physical">Physical Health</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="license_number" class="form-label">License Number</label>
+                                        <input type="text" class="form-control" id="license_number" name="license_number">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="hourly_rate" class="form-label">Hourly Rate ($)</label>
+                                        <input type="number" class="form-control" id="hourly_rate" name="hourly_rate" step="0.01" min="0">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="bio" class="form-label">Bio</label>
+                                <textarea class="form-control" id="bio" name="bio" rows="3"></textarea>
+                            </div>
+
+                            <!-- Availability Pattern -->
+                            {% set care_provider_id = user.id %}
+                            {% include 'admin/partials/availability_pattern_form.html' %}
+                        </div>
 
                     <hr>
                     <div class="d-flex justify-content-between">
@@ -104,7 +160,72 @@
                             </button>
                             <a href="/admin-control-panel-x7k9m2/users" class="btn btn-secondary">
                                 <i class="fas fa-times"></i> Cancel
-                            </a>
+                                </a>
+                                <script>
+// --- Care Provider fields visibility and data loading ---
+(function() {
+  const roleSelect = document.getElementById('role');
+  const cpFields = document.getElementById('careProviderFields');
+  const userId = '{{ user.id }}';
+
+  function toggleCareProviderFields() {
+    if (roleSelect.value === 'care_provider') {
+      cpFields.style.display = 'block';
+    } else {
+      cpFields.style.display = 'none';
+    }
+  }
+
+  function formatForDatetimeLocal(isoStr) {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  async function loadUserDetails() {
+    try {
+      const resp = await fetch(`/admin-control-panel-x7k9m2/users/${userId}/details`, { credentials: 'include' });
+      if (!resp.ok) return;
+      const json = await resp.json();
+      if (!json?.success) return;
+      const data = json.data || {};
+
+      // Ensure role select matches server data (handles enum vs string)
+      if (data.user && data.user.role) {
+        roleSelect.value = data.user.role;
+      }
+      toggleCareProviderFields();
+
+      if (roleSelect.value !== 'care_provider') return;
+
+      // populate CP fields
+      const cp = data.care_provider || {};
+      const specialty = document.getElementById('specialty');
+      const licenseNumber = document.getElementById('license_number');
+      const hourlyRate = document.getElementById('hourly_rate');
+      const bio = document.getElementById('bio');
+
+      if (specialty) specialty.value = cp.specialty || '';
+      if (licenseNumber) licenseNumber.value = cp.license_number || '';
+      if (hourlyRate) hourlyRate.value = (cp.hourly_rate != null) ? (cp.hourly_rate / 100).toFixed(2) : '';
+      if (bio) bio.value = cp.bio || '';
+
+
+    } catch (e) {
+      console.warn('Failed to load user details', e);
+    }
+  }
+
+  // Init
+  roleSelect.addEventListener('change', () => {
+    toggleCareProviderFields();
+  });
+  // Always load details on page load to set accurate role and prefill data
+  loadUserDetails();
+})();
+
+                                </script>
                         </div>
                         <div>
                             <small class="text-muted">* Required fields</small>
@@ -157,7 +278,7 @@
 <script>
 document.getElementById('editUserForm').addEventListener('submit', async function(e) {
     e.preventDefault();
-    
+
     const formData = new FormData(this);
     const userData = {
         email: formData.get('email'),
@@ -165,6 +286,24 @@ document.getElementById('editUserForm').addEventListener('submit', async functio
         role: formData.get('role'),
         is_active: formData.get('is_active') === 'true'
     };
+
+    // If care provider, include CP fields and availability
+    if (userData.role === 'care_provider') {
+        const specialty = document.getElementById('specialty')?.value || '';
+        const licenseNumber = document.getElementById('license_number')?.value || '';
+        const hourlyRateDollars = document.getElementById('hourly_rate')?.value || '';
+        const bio = document.getElementById('bio')?.value || '';
+
+        userData.specialty = specialty || undefined;
+        userData.license_number = licenseNumber || undefined;
+        // Convert dollars->cents if provided
+        if (hourlyRateDollars !== '') {
+            const cents = Math.round(parseFloat(hourlyRateDollars) * 100);
+            if (!isNaN(cents)) userData.hourly_rate = cents;
+        }
+        userData.bio = bio || undefined;
+
+    }
 
     try {
         const response = await fetch('/admin-control-panel-x7k9m2/users/{{ user.id }}/edit', {
@@ -197,16 +336,16 @@ function showMessage(message, type) {
     const messageContainer = document.getElementById('messageContainer');
     const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
     const icon = type === 'success' ? 'fas fa-check-circle' : 'fas fa-exclamation-triangle';
-    
+
     const alertDiv = document.createElement('div');
     alertDiv.className = `alert ${alertClass} alert-dismissible fade show`;
     alertDiv.innerHTML = `
         <i class="${icon}"></i> ${message}
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     `;
-    
+
     messageContainer.appendChild(alertDiv);
-    
+
     // Auto-remove after 5 seconds
     setTimeout(() => {
         if (alertDiv.parentNode) {

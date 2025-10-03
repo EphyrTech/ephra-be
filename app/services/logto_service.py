@@ -6,10 +6,12 @@ from csv import Error
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, TypeVar, Type
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 import httpx
 from logto import LogtoClient, LogtoConfig
+
+import re
 
 from app.core.config import settings
 
@@ -49,11 +51,50 @@ class UserBase(BaseModel):
     username: Optional[str] = None
     primaryEmail: str
     primaryPhone: Optional[str] = None
-    name: str
+    name: Optional[str] = None
     avatar: Optional[str] = None
     customData: Optional[Dict[str, Any]] = Field(default_factory=dict)
     profile: Optional[Dict[str, Any]] = None
 
+    @model_validator(mode='before')
+    @classmethod
+    def generate_missing_data(cls, data: Any) -> Any:
+        # We only work with dictionary input before Pydantic processes it
+        if not isinstance(data, dict):
+            return data
+
+        primary_email = data.get('primaryEmail')
+        
+        # We can't proceed without an email
+        if not primary_email:
+            return data
+
+        # Extract the prefix (the part before the @ symbol)
+        try:
+            email_prefix = primary_email.split('@')[0]
+        except IndexError:
+            # Handle malformed email if primaryEmail somehow passed basic type checks but failed on splitting
+            return data
+
+        # --- 1. Generate Username ---
+        if data.get('username') is None:
+            # Remove non-alphanumeric characters, keeping only a-z 0-9
+            base_username = re.sub(r'[^a-z0-9]', '', email_prefix.lower())
+            data['username'] = base_username or "user"
+
+        # --- 2. Generate Full Name ---
+        if data.get('name') is None:
+            # Replace common separators ('.', '_') with space
+            clean_name_parts = email_prefix.replace('.', ' ').replace('_', ' ')
+            
+            # Capitalize each word (Title case)
+            if clean_name_parts.strip():
+                generated_name = ' '.join(word.capitalize() for word in clean_name_parts.split())
+                data['name'] = generated_name
+            else:
+                data['name'] = "Anonymous User"
+                
+        return data
 # Request Model for Creating a User
 class UserCreateRequest(UserBase):
     password: Optional[str] = None
@@ -343,6 +384,17 @@ class LogtoUserManager(LogtoManagerService):
             path=path,
             success_status=204,
             error_message_prefix=f"Failed to delete logTo user {user_id}"
+        )
+    
+    async def suspend(self, user_id: str, is_suspended: bool = True):
+        path = f"/api/users/{user_id}/is-suspended"
+        return await self._make_management_request(
+            method="PATCH",
+            path=path,
+            json_data={"isSuspended": is_suspended},
+            response_model=UserUpdateResponse,
+            success_status=200,
+            error_message_prefix=f"Failed to suspend logTo user {user_id}"
         )
     
     async def get_roles(self, user_id):

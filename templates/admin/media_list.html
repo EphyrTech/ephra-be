@@ -74,7 +74,7 @@
                             <small class="text-muted">{{ media.file_path }}</small>
                         </td>
                         <td>
-                            <small>{{ media.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                            <small><span class="tz-datetime" data-dt="{{ media.created_at.isoformat() }}"></span></small>
                         </td>
                         <td>
                             <div class="btn-group btn-group-sm">

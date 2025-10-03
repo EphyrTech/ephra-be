@@ -40,6 +40,9 @@ class BaseUser:
             self.current_db_user = self.db.query(User).filter(User.logto_user_id == self.log_to_user_id).first()
         
         self.current_logto_user = await self.logto_user_manager.get(self.log_to_user_id)
+
+        if not self.current_logto_user:
+            return
         same_email_users = self.db.query(User).filter(User.email == self.current_logto_user.primaryEmail).all()
 
         if len(same_email_users) > 1:
@@ -59,11 +62,16 @@ class BaseUser:
     
     async def upsert_db_user(self):
         try:
+            name = getattr(self.current_logto_user, "name", "NoName Persona")
+            first_name = name.split()[0] if name else "NoName"
+            last_name = name.split()[-1] if name else "Persona"
             logto_data = {
                 "email": self.current_logto_user.primaryEmail,
                 "logto_user_id": self.log_to_user_id,
                 "role": self.db_user_role,
-                "name": getattr(self.current_logto_user, "name", "NoName Persona"),
+                "name": name,
+                "first_name": first_name,
+                "last_name": last_name,
                 "is_active": not self.current_logto_user.isSuspended,
                 "photo_url": self.current_logto_user.avatar,
             }        

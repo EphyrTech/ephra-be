@@ -543,8 +543,9 @@ async def admin_delete_user(
     user_service = CareProviderUser(
         db=db,
         logto_user_manager=logto_user_manager,
-        log_to_user_id=user_id
+        db_user_id=user_id
     )
+    await user_service.init()
     await user_service.suspend()
 
     # Invalidate cache after user deletion

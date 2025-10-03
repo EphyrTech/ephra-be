@@ -1,7 +1,9 @@
 """Admin panel authentication and session management"""
 
 import hashlib
+import json
 import logging
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -18,8 +20,65 @@ from app.db.models import User, UserRole
 
 logger = logging.getLogger(__name__)
 
-# In-memory session store (in production, use Redis or database)
+# In-memory session store with file persistence
 admin_sessions = {}
+
+# File path for session persistence
+SESSIONS_FILE = "/tmp/admin_sessions.json"
+
+def save_sessions_to_file():
+    """Save current sessions to file for persistence across restarts"""
+    try:
+        sessions_data = {}
+        for session_id, session in admin_sessions.items():
+            sessions_data[session_id] = {
+                "username": session.username,
+                "ip_address": session.ip_address,
+                "user_agent": session.user_agent,
+                "user_id": session.user_id,
+                "created_at": session.created_at.isoformat(),
+                "last_activity": session.last_activity.isoformat(),
+                "expires_at": session.expires_at.isoformat()
+            }
+
+        with open(SESSIONS_FILE, 'w') as f:
+            json.dump(sessions_data, f)
+        logger.debug(f"Saved {len(sessions_data)} sessions to file")
+    except Exception as e:
+        logger.error(f"Failed to save sessions to file: {e}")
+
+def load_sessions_from_file():
+    """Load sessions from file on startup"""
+    try:
+        if not os.path.exists(SESSIONS_FILE):
+            return
+
+        with open(SESSIONS_FILE, 'r') as f:
+            sessions_data = json.load(f)
+
+        for session_id, data in sessions_data.items():
+            session = AdminSession(
+                session_id=session_id,
+                username=data["username"],
+                ip_address=data["ip_address"],
+                user_agent=data["user_agent"],
+                user_id=data["user_id"]
+            )
+            # Restore timestamps
+            session.created_at = datetime.fromisoformat(data["created_at"])
+            session.last_activity = datetime.fromisoformat(data["last_activity"])
+            session.expires_at = datetime.fromisoformat(data["expires_at"])
+
+            # Only restore if session is still valid
+            if session.is_valid():
+                admin_sessions[session_id] = session
+
+        logger.info(f"Loaded {len(admin_sessions)} valid sessions from file")
+    except Exception as e:
+        logger.error(f"Failed to load sessions from file: {e}")
+
+# Load sessions on module import
+load_sessions_from_file()
 
 # In-memory audit log store (in production, use database or log aggregation)
 audit_log_entries = []
@@ -101,6 +160,9 @@ def create_admin_session(username: str, ip_address: str, user_agent: str, user_i
     session = AdminSession(session_id, username, ip_address, user_agent, user_id)
     admin_sessions[session_id] = session
 
+    # Persist to file
+    save_sessions_to_file()
+
     # Log session creation
     logger.info(f"Admin session created - User: {username}, IP: {ip_address}, Session: {session_id}, Total sessions: {len(admin_sessions)}")
 
@@ -110,16 +172,24 @@ def get_admin_session(session_id: str) -> Optional[AdminSession]:
     """Get admin session by ID"""
     if not session_id:
         return None
-    
+
     session = admin_sessions.get(session_id)
+
+    # If session not found in memory, try to reload from file
+    if not session and len(admin_sessions) == 0:
+        logger.info("No sessions in memory, attempting to reload from file")
+        load_sessions_from_file()
+        session = admin_sessions.get(session_id)
+
     if not session:
         return None
-    
+
     if not session.is_valid():
         # Clean up expired session
         del admin_sessions[session_id]
+        save_sessions_to_file()  # Persist the removal
         return None
-    
+
     session.update_activity()
     return session
 
@@ -129,6 +199,8 @@ def invalidate_admin_session(session_id: str) -> bool:
         session = admin_sessions[session_id]
         logger.info(f"Admin session invalidated - User: {session.username}, IP: {session.ip_address}, Session: {session_id}")
         del admin_sessions[session_id]
+        # Persist changes to file
+        save_sessions_to_file()
         return True
     return False
 
@@ -138,9 +210,13 @@ def cleanup_expired_sessions():
     for session_id, session in admin_sessions.items():
         if not session.is_valid():
             expired_sessions.append(session_id)
-    
-    for session_id in expired_sessions:
-        del admin_sessions[session_id]
+
+    if expired_sessions:
+        for session_id in expired_sessions:
+            del admin_sessions[session_id]
+        # Persist changes to file if any sessions were removed
+        save_sessions_to_file()
+        logger.info(f"Cleaned up {len(expired_sessions)} expired sessions")
 
 class AdminAuthException(Exception):
     """Custom exception for admin authentication that triggers redirect"""

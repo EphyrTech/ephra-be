@@ -114,6 +114,7 @@ def create_auth_info(payload: Dict[str, Any]) -> AuthInfo:
     )
 
     if not auth_info.has_any_scope(RoleScopes.ADMIN):
+        logger.debug(f"User does not have required scopes: {auth_info.scopes}")
         raise AuthorizationError('User does not have required scopes', 403)
 
     return auth_info

@@ -34,8 +34,10 @@ from app.middleware import invalidate_cache
 from app.services.appointment_service import (AppointmentCreate,
                                               AppointmentService)
 from app.services.user_service import CareProviderUser
+from app.services.logto_service import 
 
 logger = logging.getLogger(__name__)
+logto_user_manager = LogtoUserManager()
 
 # Initialize Jinja2 templates
 templates = Jinja2Templates(directory="templates")
@@ -538,7 +540,11 @@ async def admin_delete_user(
 
     log_admin_action(session, "DELETE_USER", {"user_id": user_id})
 
-    user_service = CareProviderUser(db, log_to_user_id=user_id)
+    user_service = CareProviderUser(
+        db=db,
+        logto_user_manager=logto_user_manager,
+        log_to_user_id=user_id
+    )
     await user_service.suspend()
 
     # Invalidate cache after user deletion

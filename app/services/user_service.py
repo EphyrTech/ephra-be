@@ -162,4 +162,4 @@ class CareProviderUser(BaseUser):
         self.db_user_role = UserRole.CARE_PROVIDER
         self.logto_user_role = settings.roles_map[UserRole.CARE_PROVIDER]['logto_role']
         self.logto_user_role_id = settings.roles_map[UserRole.CARE_PROVIDER]['logto_id']
-    
+    delete from users where id='baab362e-a3d1-4cec-99b1-c97e6da54574';

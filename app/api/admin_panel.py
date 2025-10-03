@@ -34,7 +34,7 @@ from app.middleware import invalidate_cache
 from app.services.appointment_service import (AppointmentCreate,
                                               AppointmentService)
 from app.services.user_service import CareProviderUser
-from app.services.logto_service import 
+from app.services.logto_service import LogtoUserManager
 
 logger = logging.getLogger(__name__)
 logto_user_manager = LogtoUserManager()
